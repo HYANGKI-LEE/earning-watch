@@ -22,7 +22,21 @@ BASE = "https://opendart.fss.or.kr/api/"
 # DART 보고서 코드
 REPRT = {"Q1": "11013", "H1": "11012", "Q3": "11014", "FY": "11011"}
 
-PAUSE = 0.12  # 호출 간격(초) — 분당 호출 제한 대비
+import threading
+
+# 전체 호출 속도 상한 (여러 스레드가 동시에 불러도 합쳐서 초당 RATE 건)
+RATE = float(os.environ.get("DART_RATE", "10"))
+_lock = threading.Lock()
+_next = [0.0]
+
+
+def _throttle() -> None:
+    with _lock:
+        now = time.monotonic()
+        t = max(now, _next[0])
+        _next[0] = t + 1.0 / RATE
+    if t > now:
+        time.sleep(t - now)
 
 
 class DartLimitError(RuntimeError):
@@ -67,7 +81,7 @@ def call(endpoint: str, **params) -> dict:
     """JSON API 호출. status 000 이면 dict, 013(데이터 없음)이면 빈 list 를 가진 dict."""
     params = {"crtfc_key": api_key(), **params}
     url = BASE + endpoint + "?" + urllib.parse.urlencode(params)
-    time.sleep(PAUSE)
+    _throttle()
     data = json.loads(_get(url).decode("utf-8"))
     status = data.get("status")
     if status == "000":

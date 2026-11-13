@@ -20,7 +20,7 @@ from datetime import date, timedelta
 
 import dart
 
-WORKERS = int(os.environ.get("DART_WORKERS", "4"))
+WORKERS = int(os.environ.get("DART_WORKERS", "10"))
 BUDGET_MIN = float(os.environ.get("UNIVERSE_BUDGET_MIN", "120"))
 
 BAL_APIS = {
