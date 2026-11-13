@@ -10,11 +10,18 @@
 """
 from __future__ import annotations
 
+import os
 import re
 import sys
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
 
 import dart
+
+WORKERS = int(os.environ.get("DART_WORKERS", "4"))
+BUDGET_MIN = float(os.environ.get("UNIVERSE_BUDGET_MIN", "120"))
 
 BAL_APIS = {
     "bond": "cprndNrdmpBlce.json",          # 회사채 미상환 잔액
@@ -94,38 +101,68 @@ def main() -> None:
 
     prev = dart.load_json("universe.json", {"companies": {}})["companies"]
     out: dict[str, dict] = {}
-    calls_done = 0
-    try:
-        for i, (cc, c) in enumerate(corps.items(), 1):
-            reps = sorted(c["reps"], key=lambda r: r["rcept_no"], reverse=True)
-            fy = [r for r in reps if r["kind"] == "사업"]
-            fye = fy[0]["month"] if fy else 12
-            latest = reps[0]
-            info = names.get(cc, {})
-            rec = {
-                "name": info.get("name") or cc,
-                "stock_code": info.get("stock_code", ""),
-                "cls": c["cls"],
-                "fye": fye,
-                "checked_rcept": latest["rcept_no"],
-            }
-            old = prev.get(cc)
-            if old and old.get("checked_rcept") == latest["rcept_no"] and "bal" in old:
-                rec["bal"], rec["bal_asof"] = old["bal"], old.get("bal_asof")
-            else:
-                code = reprt_code(latest, fye)
-                rec["bal"] = {k: balance(ep, cc, latest["year"], code)
-                              for k, ep in BAL_APIS.items()}
-                rec["bal_asof"] = f'{latest["year"]}.{latest["month"]:02d}'
-                calls_done += len(BAL_APIS)
-            out[cc] = rec
-            if i % 200 == 0:
-                print(f"  {i:,}/{len(corps):,} (신규 조회 {calls_done:,}회)")
-    except dart.DartLimitError as e:
-        # 한도 초과 시 지금까지 결과 + 이전 결과 보존 후 종료 → 다음 실행에서 이어서
-        print(f"중단: {e}", file=sys.stderr)
-        for cc, old in prev.items():
-            out.setdefault(cc, old)
+    todo = []
+    for cc, c in corps.items():
+        reps = sorted(c["reps"], key=lambda r: r["rcept_no"], reverse=True)
+        fy = [r for r in reps if r["kind"] == "사업"]
+        fye = fy[0]["month"] if fy else 12
+        latest = reps[0]
+        info = names.get(cc, {})
+        rec = {
+            "name": info.get("name") or cc,
+            "stock_code": info.get("stock_code", ""),
+            "cls": c["cls"],
+            "fye": fye,
+        }
+        old = prev.get(cc) or {}
+        # 이전 결과는 일단 유지 (이번에 새로 확인하면 덮어씀)
+        for k in ("bal", "bal_asof", "checked_rcept"):
+            if k in old:
+                rec[k] = old[k]
+        if not (old.get("checked_rcept") == latest["rcept_no"] and "bal" in old):
+            todo.append((cc, latest, fye))
+        out[cc] = rec
+
+    # 새 보고서만 병렬 조회. 시간 예산을 넘기면 멈추고 저장 → 다음 실행에서 이어서.
+    deadline = time.monotonic() + BUDGET_MIN * 60
+    stop = threading.Event()
+
+    def work(item):
+        if stop.is_set() or time.monotonic() > deadline:
+            return None
+        cc, latest, fye = item
+        code = reprt_code(latest, fye)
+        bal = {k: balance(ep, cc, latest["year"], code) for k, ep in BAL_APIS.items()}
+        return cc, latest, bal
+
+    print(f"잔액 조회 대상 {len(todo):,}개사 (캐시 {len(out) - len(todo):,}개사), "
+          f"병렬 {WORKERS}, 시간 예산 {BUDGET_MIN}분")
+    done = failed = 0
+    with ThreadPoolExecutor(WORKERS) as ex:
+        futs = [ex.submit(work, it) for it in todo]
+        for f in as_completed(futs):
+            try:
+                r = f.result()
+            except dart.DartLimitError as e:
+                if not stop.is_set():
+                    print(f"중단: {e}", file=sys.stderr)
+                stop.set()
+                continue
+            except Exception as e:  # 한 회사 실패는 건너뛰고 다음 실행에서 재시도
+                failed += 1
+                continue
+            if r is None:
+                continue
+            cc, latest, bal = r
+            out[cc].update(bal=bal, bal_asof=f'{latest["year"]}.{latest["month"]:02d}',
+                           checked_rcept=latest["rcept_no"])
+            done += 1
+            if done % 200 == 0:
+                print(f"  {done:,}/{len(todo):,}")
+    left = len(todo) - done
+    calls_done = done * len(BAL_APIS)
+    if left:
+        print(f"미확인 {left:,}개사 (실패 {failed:,}) — 다음 실행에서 이어서 조회")
 
     for rec in out.values():
         b = rec.get("bal") or {}
