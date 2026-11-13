@@ -93,9 +93,10 @@ def main() -> None:
 
     raw: dict[tuple[int, int], dict] = {}
     try:
-        for y, q in quarters:
+        for n, (y, q) in enumerate(quarters, 1):
             raw[(y, q)] = fetch_period(codes, y, q)
-            print(f"  {y}Q{q}: {len(raw[(y, q)]):,}개사")
+            print(f"  실적 {n}/{len(quarters)} ({n / len(quarters):.0%}) {y}Q{q}: "
+                  f"{len(raw[(y, q)]):,}개사", flush=True)
     except dart.DartLimitError as e:
         print(f"중단: {e}", file=sys.stderr)
         if not raw:

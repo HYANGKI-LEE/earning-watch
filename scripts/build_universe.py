@@ -158,7 +158,7 @@ def main() -> None:
                            checked_rcept=latest["rcept_no"])
             done += 1
             if done % 200 == 0:
-                print(f"  {done:,}/{len(todo):,}")
+                print(f"  잔액 조회 {done:,}/{len(todo):,} ({done / len(todo):.0%})", flush=True)
     left = len(todo) - done
     calls_done = done * len(BAL_APIS)
     if left:
