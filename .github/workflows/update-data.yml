@@ -15,7 +15,7 @@ permissions:
 
 concurrency:
   group: update-data
-  cancel-in-progress: true   # 새 실행이 오면 이전 실행 취소
+  cancel-in-progress: false   # 돌고 있는 수집은 끊지 않고, 새 실행은 대기
 
 jobs:
   fetch:
@@ -26,19 +26,21 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: 대상 기업 목록 (회사채·CP·전단채 잔액 확인)
+
+      # 1단계: 발행사 잔액 → 끝나는 즉시 커밋 (발행사 리스트 표가 바로 갱신됨)
+      - name: 1. 대상 기업 목록 (회사채·CP·전단채 잔액 확인)
         env:
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
         run: python scripts/build_universe.py
-      - name: 분기 실적
+      - name: 1. 잔액 데이터 커밋
+        if: always()
+        run: bash scripts/commit_data.sh "data - 발행사 잔액 갱신" data/universe.json
+
+      # 2단계: 분기 실적 → 끝나는 즉시 커밋
+      - name: 2. 분기 실적
         env:
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
         run: python scripts/fetch_earnings.py
-      - name: Commit data
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/
-          git diff --cached --quiet || git commit -m "data: 자동 갱신"
-          git pull --rebase -X theirs origin main || git pull --rebase origin main
-          git push
+      - name: 2. 실적 데이터 커밋
+        if: always()
+        run: bash scripts/commit_data.sh "data - 분기 실적 갱신" data/earnings.json

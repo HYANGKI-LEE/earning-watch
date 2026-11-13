@@ -8,11 +8,15 @@
 """
 from __future__ import annotations
 
+import os
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
 import dart
+
+WORKERS = int(os.environ.get("DART_WORKERS", "10"))
 
 # 분기 번호 → reprt_code
 Q_CODE = {1: "11013", 2: "11012", 3: "11014", 4: "11011"}
@@ -53,10 +57,16 @@ def recent_quarters(n: int = 6, today: date | None = None) -> list[tuple[int, in
 def fetch_period(codes: list[str], year: int, q: int) -> dict[str, dict]:
     """한 분기의 모든 대상 기업 주요계정 → {corp_code: {CFS: {...}, OFS: {...}, rcept_no}}"""
     res: dict[str, dict] = {}
-    for i in range(0, len(codes), 100):
-        chunk = codes[i:i + 100]
-        rows = dart.call("fnlttMultiAcnt.json", corp_code=",".join(chunk),
+    chunks = [codes[i:i + 100] for i in range(0, len(codes), 100)]
+
+    def get(chunk):
+        return dart.call("fnlttMultiAcnt.json", corp_code=",".join(chunk),
                          bsns_year=str(year), reprt_code=Q_CODE[q]).get("list", [])
+
+    # 100개사 묶음 호출을 병렬로 (전체 속도는 dart.RATE 로 제한)
+    with ThreadPoolExecutor(WORKERS) as ex:
+        results = list(ex.map(get, chunks))
+    for rows in results:
         for r in rows:
             key = norm(r.get("account_nm", ""))
             if not key:
