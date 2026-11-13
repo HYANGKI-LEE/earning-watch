@@ -17,6 +17,9 @@ concurrency:
   group: update-data
   cancel-in-progress: false   # 돌고 있는 수집은 끊지 않고, 새 실행은 대기
 
+env:
+  PYTHONUNBUFFERED: "1"       # 로그가 실행 중에 바로 보이도록
+
 jobs:
   fetch:
     runs-on: ubuntu-latest
