@@ -6,12 +6,15 @@
 
 ```
 GitHub Actions (키는 Secrets에 보관)
-  → scripts/fetch_data.py 가 API 호출 → data/*.json 생성 → 커밋
+  → scripts/build_universe.py : 정기공시 기업의 회사채·CP·전단채 미상환 잔액 확인 → data/universe.json
+  → scripts/fetch_earnings.py : 대상(상장사 ∪ 발행사) 최근 6개 분기 주요계정 → data/earnings.json
+  → 커밋
       → GitHub Pages (index.html) 가 JSON 을 읽어 표시
 ```
 
 - `index.html`, `js/`, `css/` : 정적 페이지 (GitHub Pages)
-- `scripts/` : 데이터 수집 스크립트 (Actions에서 실행)
+- `scripts/` : 데이터 수집 스크립트 (Actions에서 실행, 키는 환경변수 `DART_API_KEY`)
+  - 로컬 테스트: 레포 폴더에 `.env` 파일(`DART_API_KEY=...`) — gitignore 됨
 - `data/` : 수집 결과 JSON (페이지가 읽는 파일)
 - `.github/workflows/update-data.yml` : 수집 → 커밋 자동화
 

@@ -9,11 +9,34 @@
 <body>
   <header>
     <h1>Earning Watch</h1>
-    <p class="sub">회사채·CP 발행사 / 상장사 분기 실적</p>
+    <p class="sub">회사채·CP 발행사 / 상장사 분기 실적 <span id="updated"></span></p>
   </header>
-  <main>
-    <p id="status">준비 중…</p>
-  </main>
+
+  <section class="controls">
+    <select id="period" aria-label="분기"></select>
+    <div class="chips" id="group">
+      <button data-v="all" class="on">전체</button>
+      <button data-v="issuer">회사채·CP 발행사</button>
+      <button data-v="listed">상장사</button>
+      <button data-v="unlisted-issuer">비상장 발행사</button>
+    </div>
+    <div class="chips" id="inst">
+      <button data-v="bond">회사채</button>
+      <button data-v="cp">CP</button>
+      <button data-v="stb">전단채</button>
+    </div>
+    <input id="q" type="search" placeholder="회사명 검색">
+  </section>
+
+  <p id="status" class="muted">불러오는 중…</p>
+  <div class="tablewrap">
+    <table id="tbl">
+      <thead></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <p class="muted note">단위: 억원 · 손익은 분기 단독(4Q = 연간 − 3Q 누적) · 연결 우선, 없으면 별도 · 출처: DART OpenAPI</p>
+
   <script src="js/app.js"></script>
 </body>
 </html>

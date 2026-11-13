@@ -1,7 +1,44 @@
-:root { --bg:#ffffff; --fg:#1f2328; --muted:#656d76; }
-@media (prefers-color-scheme: dark) { :root { --bg:#0d1117; --fg:#e6edf3; --muted:#8b949e; } }
+:root {
+  --bg:#ffffff; --fg:#1f2328; --muted:#656d76; --line:#d0d7de; --head:#f6f8fa;
+  --chip:#eef1f4; --on:#0969da; --onfg:#ffffff; --up:#cf222e; --down:#0550ae; --hover:#f3f6f9;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:#0d1117; --fg:#e6edf3; --muted:#8b949e; --line:#30363d; --head:#161b22;
+    --chip:#21262d; --on:#2f81f7; --onfg:#ffffff; --up:#ff7b72; --down:#79c0ff; --hover:#161b22;
+  }
+}
 * { box-sizing: border-box; }
 body { margin:0; padding:24px 16px; background:var(--bg); color:var(--fg);
-       font-family: "Pretendard", "Malgun Gothic", system-ui, sans-serif; }
+       font-family: "Pretendard", "Malgun Gothic", system-ui, sans-serif; font-size:14px; }
 header h1 { margin:0; font-size:1.6rem; }
-.sub { margin:4px 0 24px; color:var(--muted); }
+.sub { margin:4px 0 16px; color:var(--muted); }
+.muted { color:var(--muted); }
+.note { font-size:12px; }
+
+.controls { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px; }
+.controls select, .controls input {
+  padding:6px 10px; border:1px solid var(--line); border-radius:6px;
+  background:var(--bg); color:var(--fg); font:inherit;
+}
+.controls input { min-width:180px; flex:1; max-width:280px; }
+.chips { display:flex; gap:4px; flex-wrap:wrap; }
+.chips button {
+  border:0; border-radius:999px; padding:6px 12px; background:var(--chip);
+  color:var(--fg); font:inherit; cursor:pointer;
+}
+.chips button.on { background:var(--on); color:var(--onfg); }
+
+.tablewrap { overflow:auto; max-height:75vh; border:1px solid var(--line); border-radius:8px; }
+table { border-collapse:collapse; width:100%; white-space:nowrap; }
+th, td { padding:6px 10px; border-bottom:1px solid var(--line); text-align:right; }
+th { background:var(--head); position:sticky; top:0; cursor:pointer; user-select:none; font-weight:600; }
+th.l, td.l { text-align:left; }
+tbody tr.row { cursor:pointer; }
+tbody tr.row:hover { background:var(--hover); }
+.up { color:var(--up); }
+.down { color:var(--down); }
+.badge { display:inline-block; padding:1px 6px; border-radius:4px; background:var(--chip); font-size:11px; margin-right:2px; }
+tr.detail > td { background:var(--head); text-align:left; }
+tr.detail table { width:auto; }
+tr.detail th { position:static; cursor:default; }
