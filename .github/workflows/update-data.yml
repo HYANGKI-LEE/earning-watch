@@ -15,7 +15,7 @@ permissions:
 
 concurrency:
   group: update-data
-  cancel-in-progress: false
+  cancel-in-progress: true   # 새 실행이 오면 이전 실행 취소
 
 jobs:
   fetch:
