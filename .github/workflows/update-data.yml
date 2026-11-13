@@ -2,6 +2,11 @@ name: update-data
 
 on:
   workflow_dispatch:          # 수동 실행 (Actions 탭 → Run workflow)
+  push:                       # 수집 코드가 바뀌면 다시 수집
+    branches: [main]
+    paths:
+      - scripts/**
+      - .github/workflows/update-data.yml
   schedule:
     - cron: "0 22 * * 0-4"    # 평일 07:00 KST
 
