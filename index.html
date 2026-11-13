@@ -12,6 +12,26 @@
     <p class="sub">회사채·CP 발행사 / 상장사 분기 실적 <span id="updated"></span></p>
   </header>
 
+  <nav class="tabs" id="tabs">
+    <button data-tab="earn" class="on">분기 실적</button>
+    <button data-tab="iss">발행사 리스트</button>
+  </nav>
+
+  <div id="tab-iss" hidden>
+    <section class="controls">
+      <input id="iq" type="search" placeholder="기업명·기업코드 검색">
+    </section>
+    <p id="istatus" class="muted">불러오는 중…</p>
+    <div class="tablewrap">
+      <table id="itbl">
+        <thead></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="muted note">회사채·기업어음(CP)·단기사채(전단채) 미상환 잔액이 0보다 큰 기업 · 단위: 억원 · 기준: 각 기업의 최신 정기보고서(사업·반기·분기) · 기업코드: DART 고유번호 · 출처: DART OpenAPI</p>
+  </div>
+
+  <div id="tab-earn">
   <section class="controls">
     <select id="period" aria-label="분기"></select>
     <div class="chips" id="group">
@@ -36,6 +56,7 @@
     </table>
   </div>
   <p class="muted note">단위: 억원 · 손익은 분기 단독(4Q = 연간 − 3Q 누적) · 연결 우선, 없으면 별도 · 출처: DART OpenAPI</p>
+  </div>
 
   <script src="js/app.js"></script>
 </body>

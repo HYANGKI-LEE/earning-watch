@@ -16,7 +16,15 @@ header h1 { margin:0; font-size:1.6rem; }
 .muted { color:var(--muted); }
 .note { font-size:12px; }
 
-.controls { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px; }
+.tabs { display:flex; gap:4px; border-bottom:1px solid var(--line); margin-bottom:16px; }
+.tabs button {
+  border:0; background:none; color:var(--muted); font:inherit; font-weight:600;
+  padding:8px 14px; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px;
+}
+.tabs button.on { color:var(--fg); border-bottom-color:var(--on); }
+tfoot td { font-weight:600; background:var(--head); position:sticky; bottom:0; }
+
+.controls {display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px; }
 .controls select, .controls input {
   padding:6px 10px; border:1px solid var(--line); border-radius:6px;
   background:var(--bg); color:var(--fg); font:inherit;

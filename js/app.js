@@ -156,8 +156,84 @@ function bind() {
   };
 }
 
-Promise.all(["data/universe.json", "data/earnings.json"].map(u =>
-  fetch(u, { cache: "no-store" }).then(r => r.ok ? r.json() : Promise.reject(u))))
+// ───────── 발행사 리스트 탭 ─────────
+const ICOLS = [
+  { key: "cc", label: "기업코드", l: true },
+  { key: "name", label: "기업명", l: true },
+  { key: "asof", label: "최근 공시 기준", l: true },
+  { key: "bond", label: "회사채" },
+  { key: "cp", label: "기업어음(CP)" },
+  { key: "stb", label: "단기사채(전단채)" },
+  { key: "cpstb", label: "CP+전단채" },
+  { key: "total", label: "총" },
+];
+const ist = { sort: { key: "total", dir: -1 }, q: "" };
+let IROWS = [];
+
+function buildIssuers() {
+  IROWS = [];
+  for (const [cc, u] of Object.entries(U.companies)) {
+    const b = u.bal || {};
+    const bond = b.bond || 0, cp = b.cp || 0, stb = b.stb || 0;
+    if (bond <= 0 && cp <= 0 && stb <= 0) continue;
+    IROWS.push({ cc, name: u.name || cc, asof: u.bal_asof || "", bond, cp, stb,
+                 cpstb: cp + stb, total: bond + cp + stb });
+  }
+}
+
+function renderIssuers() {
+  const { key, dir } = ist.sort;
+  const q = ist.q.trim().toLowerCase();
+  const rows = IROWS.filter(r => !q || r.name.toLowerCase().includes(q) || r.cc.includes(q))
+    .sort((a, b) => {
+      const x = a[key], y = b[key];
+      return (typeof x === "string" ? x.localeCompare(y, "ko") : x - y) * dir;
+    });
+  $("#itbl thead").innerHTML = "<tr>" + ICOLS.map(c =>
+    `<th class="${c.l ? "l" : ""}" data-k="${c.key}">${c.label}${key === c.key ? (dir > 0 ? " ▲" : " ▼") : ""}</th>`
+  ).join("") + "</tr>";
+  const num = v => v > 0 ? fmt(v) : "–";
+  $("#itbl tbody").innerHTML = rows.map(r =>
+    `<tr><td class="l">${r.cc}</td><td class="l">${r.name}</td><td class="l">${r.asof}</td>` +
+    ["bond", "cp", "stb", "cpstb", "total"].map(k => `<td>${num(r[k])}</td>`).join("") + "</tr>"
+  ).join("");
+  const sum = k => rows.reduce((s, r) => s + r[k], 0);
+  let tf = $("#itbl tfoot");
+  if (!tf) { tf = document.createElement("tfoot"); $("#itbl").appendChild(tf); }
+  tf.innerHTML = `<tr><td class="l" colspan="3">합계 (${rows.length.toLocaleString("ko-KR")}개사)</td>` +
+    ["bond", "cp", "stb", "cpstb", "total"].map(k => `<td>${fmt(sum(k))}</td>`).join("") + "</tr>";
+  $("#istatus").textContent = `발행사 ${rows.length.toLocaleString("ko-KR")}개사 · 목록 갱신 ${U.updated}`;
+}
+
+function bindIssuers() {
+  $("#iq").oninput = e => { ist.q = e.target.value; renderIssuers(); };
+  $("#itbl thead").onclick = e => {
+    const k = e.target.closest("th")?.dataset.k; if (!k) return;
+    ist.sort = ist.sort.key === k ? { key: k, dir: -ist.sort.dir }
+      : { key: k, dir: ICOLS.find(c => c.key === k).l ? 1 : -1 };
+    renderIssuers();
+  };
+}
+
+// ───────── 탭 전환 ─────────
+function showTab(t) {
+  $("#tabs").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
+  $("#tab-earn").hidden = t !== "earn";
+  $("#tab-iss").hidden = t !== "iss";
+  try { location.hash = t; } catch (_) {}
+}
+$("#tabs").onclick = e => { const b = e.target.closest("button"); if (b) showTab(b.dataset.tab); };
+const tabFromHash = () => showTab(location.hash === "#iss" ? "iss" : "earn");
+window.addEventListener("hashchange", tabFromHash);
+tabFromHash();
+
+// ───────── 데이터 로드 (탭별로 따로: 한쪽이 없어도 다른 쪽은 표시) ─────────
+const getJSON = u => fetch(u, { cache: "no-store" }).then(r => r.ok ? r.json() : Promise.reject(u));
+const pU = getJSON("data/universe.json");
+pU.then(u => { U = u; bindIssuers(); buildIssuers(); renderIssuers(); })
+  .catch(() => { $("#istatus").textContent = "아직 발행사 목록이 없어요. (데이터 수집 중)"; });
+
+Promise.all([pU, getJSON("data/earnings.json")])
   .then(([u, e]) => {
     U = u; E = e;
     // 데이터가 있는 분기만, 최신이 기본
