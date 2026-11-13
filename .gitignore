@@ -1,0 +1,18 @@
+# 비밀값 — 절대 커밋 금지 (API 키는 GitHub Secrets에만)
+.env
+*.env
+secrets.*
+config.local.*
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 로컬 작업 파일
+*.xlsx
+*.xlsm
+~$*
+.DS_Store
+Thumbs.db
