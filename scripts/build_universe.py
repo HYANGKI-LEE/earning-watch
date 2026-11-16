@@ -137,7 +137,7 @@ def main() -> None:
 
     print(f"잔액 조회 대상 {len(todo):,}개사 (캐시 {len(out) - len(todo):,}개사), "
           f"병렬 {WORKERS}, 시간 예산 {BUDGET_MIN}분")
-    done = failed = 0
+    done = failed = pending_tbl = 0
     with ThreadPoolExecutor(WORKERS) as ex:
         futs = [ex.submit(work, it) for it in todo]
         for f in as_completed(futs):
@@ -154,11 +154,25 @@ def main() -> None:
             if r is None:
                 continue
             cc, latest, bal = r
-            out[cc].update(bal=bal, bal_asof=f'{latest["year"]}.{latest["month"]:02d}',
-                           checked_rcept=latest["rcept_no"])
             done += 1
+            if all(v is None for v in bal.values()):
+                # 잔액 표가 아직 DART에 안 들어온 보고서(막 제출된 경우 등):
+                # 이전 보고서 잔액을 유지하고, 제출 후 30일까지는 다음 실행에서 다시 확인
+                age = (date.today() - date(int(latest["rcept_no"][:4]), int(latest["rcept_no"][4:6]),
+                                           int(latest["rcept_no"][6:8]))).days
+                if "bal" not in out[cc]:
+                    out[cc]["bal"] = bal
+                if age > 30:
+                    out[cc]["checked_rcept"] = latest["rcept_no"]
+                else:
+                    pending_tbl += 1
+            else:
+                out[cc].update(bal=bal, bal_asof=f'{latest["year"]}.{latest["month"]:02d}',
+                               checked_rcept=latest["rcept_no"])
             if done % 200 == 0:
                 print(f"  잔액 조회 {done:,}/{len(todo):,} ({done / len(todo):.0%})", flush=True)
+    if pending_tbl:
+        print(f"잔액 표 미반영 보고서 {pending_tbl:,}개사 — 이전 잔액 유지, 다음 실행에서 재확인")
     left = len(todo) - done
     calls_done = done * len(BAL_APIS)
     if left:
