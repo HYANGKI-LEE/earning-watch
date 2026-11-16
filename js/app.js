@@ -167,7 +167,7 @@ const ICOLS = [
   { key: "cpstb", label: "CP+전단채" },
   { key: "total", label: "총" },
 ];
-const ist = { sort: { key: "total", dir: -1 }, q: "" };
+const ist = { sort: { key: "total", dir: -1 }, q: "", f: "all" };
 let IROWS = [];
 
 function buildIssuers() {
@@ -175,8 +175,10 @@ function buildIssuers() {
   for (const [cc, u] of Object.entries(U.companies)) {
     const b = u.bal || {};
     const bond = b.bond || 0, cp = b.cp || 0, stb = b.stb || 0;
-    if (bond <= 0 && cp <= 0 && stb <= 0) continue;
-    IROWS.push({ cc, name: u.name || cc, asof: u.bal_asof || "", bond, cp, stb,
+    // 잔액 없는 기업도 모두 포함 (has: 잔액 > 0, notbl: 보고서에 잔액 표 없음)
+    const has = bond > 0 || cp > 0 || stb > 0;
+    const notbl = !u.bal || Object.values(u.bal).every(v => v == null);
+    IROWS.push({ cc, name: u.name || cc, asof: u.bal_asof || "", bond, cp, stb, has, notbl,
                  cpstb: cp + stb, total: bond + cp + stb });
   }
 }
@@ -185,6 +187,7 @@ function renderIssuers() {
   const { key, dir } = ist.sort;
   const q = ist.q.trim().toLowerCase();
   const rows = IROWS.filter(r => !q || r.name.toLowerCase().includes(q) || r.cc.includes(q))
+    .filter(r => ist.f === "all" || (ist.f === "has" ? r.has : ist.f === "zero" ? !r.has && !r.notbl : r.notbl))
     .sort((a, b) => {
       const x = a[key], y = b[key];
       return (typeof x === "string" ? x.localeCompare(y, "ko") : x - y) * dir;
@@ -194,7 +197,7 @@ function renderIssuers() {
   ).join("") + "</tr>";
   const num = v => v > 0 ? fmt(v) : "–";
   $("#itbl tbody").innerHTML = rows.map(r =>
-    `<tr><td class="l">${r.cc}</td><td class="l">${r.name}</td><td class="l">${r.asof}</td>` +
+    `<tr><td class="l">${r.cc}</td><td class="l">${r.name}</td><td class="l">${r.asof || (r.notbl ? "잔액 표 없음" : "–")}</td>` +
     ["bond", "cp", "stb", "cpstb", "total"].map(k => `<td>${num(r[k])}</td>`).join("") + "</tr>"
   ).join("");
   const sum = k => rows.reduce((s, r) => s + r[k], 0);
@@ -202,11 +205,20 @@ function renderIssuers() {
   if (!tf) { tf = document.createElement("tfoot"); $("#itbl").appendChild(tf); }
   tf.innerHTML = `<tr><td class="l" colspan="3">합계 (${rows.length.toLocaleString("ko-KR")}개사)</td>` +
     ["bond", "cp", "stb", "cpstb", "total"].map(k => `<td>${fmt(sum(k))}</td>`).join("") + "</tr>";
-  $("#istatus").textContent = `발행사 ${rows.length.toLocaleString("ko-KR")}개사 · 목록 갱신 ${U.updated}`;
+  const n = v => v.toLocaleString("ko-KR");
+  const nHas = IROWS.filter(r => r.has).length, nTbl = IROWS.filter(r => r.notbl).length;
+  $("#ifilt [data-v=notbl]").hidden = !nTbl;
+  $("#istatus").textContent = `표시 ${n(rows.length)}개사 · 전체 ${n(IROWS.length)} = 잔액 있음 ${n(nHas)} + 잔액 0 ${n(IROWS.length - nHas - nTbl)}${nTbl ? ` + 잔액 표 없음 ${n(nTbl)}` : ""} · 목록 갱신 ${U.updated}`;
 }
 
 function bindIssuers() {
   $("#iq").oninput = e => { ist.q = e.target.value; renderIssuers(); };
+  $("#ifilt").onclick = e => {
+    const b = e.target.closest("button"); if (!b) return;
+    ist.f = b.dataset.v;
+    $("#ifilt").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+    renderIssuers();
+  };
   $("#itbl thead").onclick = e => {
     const k = e.target.closest("th")?.dataset.k; if (!k) return;
     ist.sort = ist.sort.key === k ? { key: k, dir: -ist.sort.dir }
