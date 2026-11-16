@@ -61,6 +61,12 @@ def parse_report(f: dict) -> dict | None:
             "rcept_no": f["rcept_no"], "rcept_dt": f.get("rcept_dt", "")}
 
 
+def rdate(rep: dict) -> date:
+    """접수번호 앞 8자리 = 접수일"""
+    s = rep["rcept_no"]
+    return date(int(s[:4]), int(s[4:6]), int(s[6:8]))
+
+
 def reprt_code(rep: dict, fye: int) -> str:
     """보고서 종류 + 결산월 → DART reprt_code"""
     if rep["kind"] == "사업":
@@ -114,13 +120,20 @@ def main() -> None:
             "cls": c["cls"],
             "fye": fye,
         }
+        # 직전 보고서(다른 기간) — 최신 보고서에 잔액 표가 없을 때 대신 조회
+        prev_rep = next((r for r in reps if (r["year"], r["month"]) != (latest["year"], latest["month"])), None)
         old = prev.get(cc) or {}
         # 이전 결과는 일단 유지 (이번에 새로 확인하면 덮어씀)
         for k in ("bal", "bal_asof", "checked_rcept"):
             if k in old:
                 rec[k] = old[k]
-        if not (old.get("checked_rcept") == latest["rcept_no"] and "bal" in old):
-            todo.append((cc, latest, fye))
+        # 최신 보고서 기준 값이 아니면(표 미반영 등) 제출 후 30일까지 매 실행 재확인
+        stale = old.get("bal_asof") != f'{latest["year"]}.{latest["month"]:02d}'
+        no_table = "bal" in old and all(v is None for v in (old["bal"] or {}).values())
+        fresh = (date.today() - rdate(latest)).days <= 30
+        if (old.get("checked_rcept") != latest["rcept_no"] or "bal" not in old
+                or ((stale or no_table) and fresh)):
+            todo.append((cc, latest, prev_rep, fye))
         out[cc] = rec
 
     # 새 보고서만 병렬 조회. 시간 예산을 넘기면 멈추고 저장 → 다음 실행에서 이어서.
@@ -130,10 +143,19 @@ def main() -> None:
     def work(item):
         if stop.is_set() or time.monotonic() > deadline:
             return None
-        cc, latest, fye = item
-        code = reprt_code(latest, fye)
-        bal = {k: balance(ep, cc, latest["year"], code) for k, ep in BAL_APIS.items()}
-        return cc, latest, bal
+        cc, latest, prev_rep, fye = item
+
+        def query(rep):
+            code = reprt_code(rep, fye)
+            return {k: balance(ep, cc, rep["year"], code) for k, ep in BAL_APIS.items()}
+
+        bal, used = query(latest), latest
+        if all(v is None for v in bal.values()) and prev_rep:
+            # 최신 보고서에 잔액 표가 아직 없으면 직전 보고서 기준으로
+            pb = query(prev_rep)
+            if any(v is not None for v in pb.values()):
+                bal, used = pb, prev_rep
+        return cc, latest, used, bal
 
     print(f"잔액 조회 대상 {len(todo):,}개사 (캐시 {len(out) - len(todo):,}개사), "
           f"병렬 {WORKERS}, 시간 예산 {BUDGET_MIN}분")
@@ -153,26 +175,22 @@ def main() -> None:
                 continue
             if r is None:
                 continue
-            cc, latest, bal = r
+            cc, latest, used, bal = r
             done += 1
             if all(v is None for v in bal.values()):
-                # 잔액 표가 아직 DART에 안 들어온 보고서(막 제출된 경우 등):
-                # 이전 보고서 잔액을 유지하고, 제출 후 30일까지는 다음 실행에서 다시 확인
-                age = (date.today() - date(int(latest["rcept_no"][:4]), int(latest["rcept_no"][4:6]),
-                                           int(latest["rcept_no"][6:8]))).days
+                # 최신·직전 보고서 모두 잔액 표 없음 → 이전 값 유지
                 if "bal" not in out[cc]:
                     out[cc]["bal"] = bal
-                if age > 30:
-                    out[cc]["checked_rcept"] = latest["rcept_no"]
-                else:
-                    pending_tbl += 1
+                out[cc]["checked_rcept"] = latest["rcept_no"]
             else:
-                out[cc].update(bal=bal, bal_asof=f'{latest["year"]}.{latest["month"]:02d}',
+                if used is not latest:
+                    pending_tbl += 1  # 최신 보고서 표 미반영 → 직전 보고서 값, 30일간 재확인
+                out[cc].update(bal=bal, bal_asof=f'{used["year"]}.{used["month"]:02d}',
                                checked_rcept=latest["rcept_no"])
             if done % 200 == 0:
                 print(f"  잔액 조회 {done:,}/{len(todo):,} ({done / len(todo):.0%})", flush=True)
     if pending_tbl:
-        print(f"잔액 표 미반영 보고서 {pending_tbl:,}개사 — 이전 잔액 유지, 다음 실행에서 재확인")
+        print(f"최신 보고서 잔액 표 미반영 {pending_tbl:,}개사 — 직전 보고서 기준으로 표시")
     left = len(todo) - done
     calls_done = done * len(BAL_APIS)
     if left:
