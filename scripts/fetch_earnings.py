@@ -112,7 +112,7 @@ def main() -> None:
             if not c or fsd not in c:
                 continue
             fs = c[fsd]
-            v = {"dt": c["rcept_no"][:8]}
+            v = {"dt": c["rcept_no"][:8], "rno": c["rcept_no"]}  # rno: DART 보고서 링크용
             for k in FLOW:
                 if k not in fs:
                     continue

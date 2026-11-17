@@ -2,6 +2,7 @@
 const $ = s => document.querySelector(s);
 const state = { period: null, group: "issuer", inst: new Set(), q: "", sort: { key: "dt", dir: -1 }, open: null };
 let U = null, E = null, ROWS = [];
+let NEW_DAY = ""; // 수집일(YYYYMMDD) — 이날 접수된 공시에 N 표시
 
 const CLS = { Y: "유가", K: "코스닥", N: "코넥스", E: "비상장" };
 const INST = { bond: "회사채", cp: "CP", stb: "전단채" };
@@ -28,6 +29,7 @@ function prevYear(p) { return `${+p.slice(0, 4) - 1}${p.slice(4)}`; }
 
 const COLS = [
   { key: "name", label: "회사명", l: true },
+  { key: "link", label: "공시 링크", l: true, nosort: true },
   { key: "cls", label: "구분", l: true },
   { key: "inst", label: "발행", l: true, nosort: true },
   { key: "rev", label: "매출" },
@@ -57,7 +59,10 @@ function build() {
       opm: v.rev ? v.op / v.rev * 100 : null,
       ni: v.ni, niY: growth(v.ni, y.ni), niT: turn(v.ni, y.ni),
       debt: v.eq > 0 ? v.liab / v.eq * 100 : null,
-      dt: v.dt,
+      dt: v.dt, rno: v.rno || "",
+      // 같은 날 공시는 접수번호(일련번호) 순서로 최신이 위로
+      dtKey: v.rno || v.dt,
+      isNew: !!NEW_DAY && v.dt === NEW_DAY,
     });
   }
 }
@@ -76,8 +81,9 @@ function filtered() {
 
 function render() {
   const { key, dir } = state.sort;
+  const sk = key === "dt" ? "dtKey" : key;
   const rows = filtered().sort((a, b) => {
-    const x = a[key], y = b[key];
+    const x = a[sk], y = b[sk];
     if (x == null && y == null) return 0;
     if (x == null) return 1;
     if (y == null) return -1;
@@ -91,7 +97,8 @@ function render() {
   const html = [];
   for (const r of rows.slice(0, 1000)) {
     html.push(`<tr class="row" data-cc="${r.cc}">` + COLS.map(c => {
-      if (c.key === "name") return `<td class="l">${r.name}</td>`;
+      if (c.key === "name") return `<td class="l">${r.name}${r.isNew ? '<span class="new" title="수집일에 접수된 공시">N</span>' : ""}</td>`;
+      if (c.key === "link") return `<td class="l">${r.rno ? `<a class="dartlink" href="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${r.rno}" target="_blank" rel="noopener">보고서</a>` : "–"}</td>`;
       if (c.key === "cls") return `<td class="l">${CLS[r.cls] || r.cls}</td>`;
       if (c.key === "inst") return `<td class="l">${r.issuer.map(i => `<span class="badge">${INST[i]}</span>`).join("")}</td>`;
       if (c.key === "dt") return `<td>${fmtDt(r.dt)}</td>`;
@@ -150,6 +157,7 @@ function bind() {
     render();
   };
   $("#tbl tbody").onclick = e => {
+    if (e.target.closest("a")) return; // 공시 링크 클릭은 펼치기 없이 이동
     const tr = e.target.closest("tr.row"); if (!tr) return;
     state.open = state.open === tr.dataset.cc ? null : tr.dataset.cc;
     render();
@@ -248,7 +256,7 @@ pU.then(u => { U = u; bindIssuers(); buildIssuers(); renderIssuers(); })
 
 Promise.all([pU, getJSON("data/earnings.json")])
   .then(([u, e]) => {
-    U = u; E = e;
+    U = u; E = e; NEW_DAY = (E.updated || "").replace(/-/g, "");
     // 데이터가 있는 분기만, 최신이 기본
     const ps = E.periods.filter(p => Object.values(E.companies).some(c => c.d[p]));
     $("#period").innerHTML = ps.slice().reverse().map(p => `<option>${p}</option>`).join("");

@@ -50,3 +50,6 @@ tbody tr.row:hover { background:var(--hover); }
 tr.detail > td { background:var(--head); text-align:left; }
 tr.detail table { width:auto; }
 tr.detail th { position:static; cursor:default; }
+.new { display:inline-block; margin-left:5px; padding:0 4px; border-radius:3px; background:#f97316; color:#fff; font-size:10px; font-weight:700; line-height:15px; vertical-align:1px; }
+.dartlink { color:var(--link, #2563eb); text-decoration:none; }
+.dartlink:hover { text-decoration:underline; }
