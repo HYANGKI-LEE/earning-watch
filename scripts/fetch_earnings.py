@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+import traceback
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
@@ -60,8 +61,18 @@ def fetch_period(codes: list[str], year: int, q: int) -> dict[str, dict]:
     chunks = [codes[i:i + 100] for i in range(0, len(codes), 100)]
 
     def get(chunk):
-        return dart.call("fnlttMultiAcnt.json", corp_code=",".join(chunk),
-                         bsns_year=str(year), reprt_code=Q_CODE[q]).get("list", [])
+        try:
+            return dart.call("fnlttMultiAcnt.json", corp_code=",".join(chunk),
+                             bsns_year=str(year), reprt_code=Q_CODE[q]).get("list", [])
+        except dart.DartLimitError:
+            raise  # 키·한도 오류는 전체 중단
+        except Exception as e:
+            # 묶음 하나가 실패해도 전체를 멈추지 않는다: 반으로 나눠 재시도 → 문제 회사만 건너뜀
+            if len(chunk) == 1:
+                print(f"  건너뜀 {chunk[0]} {year}Q{q}: {e}", flush=True)
+                return []
+            m = len(chunk) // 2
+            return get(chunk[:m]) + get(chunk[m:])
 
     # 100개사 묶음 호출을 병렬로 (전체 속도는 dart.RATE 로 제한)
     with ThreadPoolExecutor(WORKERS) as ex:
@@ -91,15 +102,20 @@ def main() -> None:
     print(f"대상 {len(codes):,}개, 분기 {quarters}")
 
     raw: dict[tuple[int, int], dict] = {}
-    try:
-        for n, (y, q) in enumerate(quarters, 1):
+    for n, (y, q) in enumerate(quarters, 1):
+        try:
             raw[(y, q)] = fetch_period(codes, y, q)
-            print(f"  실적 {n}/{len(quarters)} ({n / len(quarters):.0%}) {y}Q{q}: "
-                  f"{len(raw[(y, q)]):,}개사", flush=True)
-    except dart.DartLimitError as e:
-        print(f"중단: {e}", file=sys.stderr)
-        if not raw:
-            sys.exit(1)
+        except dart.DartLimitError as e:
+            print(f"중단: {e}", file=sys.stderr)
+            break
+        except Exception:
+            # 한 분기 실패가 전체 실패로 번지지 않도록: 원인은 로그에 남기고 다음 분기로
+            print(f"  {y}Q{q} 실패: {traceback.format_exc()}", file=sys.stderr, flush=True)
+            continue
+        print(f"  실적 {n}/{len(quarters)} ({n / len(quarters):.0%}) {y}Q{q}: "
+              f"{len(raw[(y, q)]):,}개사", flush=True)
+    if not raw:
+        sys.exit(1)
 
     companies: dict[str, dict] = {}
     for cc in codes:
