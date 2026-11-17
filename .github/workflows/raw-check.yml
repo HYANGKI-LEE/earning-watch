@@ -1,0 +1,28 @@
+name: raw-check
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - debug/request.txt
+      - debug/raw_balance.py
+
+permissions:
+  contents: write
+
+jobs:
+  raw:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 잔액 API 원본 조회
+        env:
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+        run: python debug/raw_balance.py
+      - name: 커밋
+        run: bash scripts/commit_data.sh "debug - 잔액 API 원본" debug/raw.json
