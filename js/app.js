@@ -160,6 +160,7 @@ function bind() {
 const ICOLS = [
   { key: "cc", label: "기업코드", l: true },
   { key: "name", label: "기업명", l: true },
+  { key: "mkt", label: "상장", l: true },
   { key: "asof", label: "최근 공시 기준", l: true },
   { key: "bond", label: "회사채" },
   { key: "cp", label: "기업어음(CP)" },
@@ -178,7 +179,7 @@ function buildIssuers() {
     // 잔액 없는 기업도 모두 포함 (has: 잔액 > 0, notbl: 보고서에 잔액 표 없음)
     const has = bond > 0 || cp > 0 || stb > 0;
     const notbl = !u.bal || Object.values(u.bal).every(v => v == null);
-    IROWS.push({ cc, name: u.name || cc, asof: u.bal_asof || "", bond, cp, stb, has, notbl,
+    IROWS.push({ cc, name: u.name || cc, mkt: CLS[u.cls] || u.cls || "", asof: u.bal_asof || "", bond, cp, stb, has, notbl,
                  cpstb: cp + stb, total: bond + cp + stb });
   }
 }
@@ -197,13 +198,13 @@ function renderIssuers() {
   ).join("") + "</tr>";
   const num = v => v > 0 ? fmt(v) : "–";
   $("#itbl tbody").innerHTML = rows.map(r =>
-    `<tr><td class="l">${r.cc}</td><td class="l">${r.name}</td><td class="l">${r.asof || (r.notbl ? "잔액 표 없음" : "–")}</td>` +
+    `<tr><td class="l">${r.cc}</td><td class="l">${r.name}</td><td class="l">${r.mkt}</td><td class="l">${r.asof || (r.notbl ? "잔액 표 없음" : "–")}</td>` +
     ["bond", "cp", "stb", "cpstb", "total"].map(k => `<td>${num(r[k])}</td>`).join("") + "</tr>"
   ).join("");
   const sum = k => rows.reduce((s, r) => s + r[k], 0);
   let tf = $("#itbl tfoot");
   if (!tf) { tf = document.createElement("tfoot"); $("#itbl").appendChild(tf); }
-  tf.innerHTML = `<tr><td class="l" colspan="3">합계 (${rows.length.toLocaleString("ko-KR")}개사)</td>` +
+  tf.innerHTML = `<tr><td class="l" colspan="4">합계 (${rows.length.toLocaleString("ko-KR")}개사)</td>` +
     ["bond", "cp", "stb", "cpstb", "total"].map(k => `<td>${fmt(sum(k))}</td>`).join("") + "</tr>";
   const n = v => v.toLocaleString("ko-KR");
   const nHas = IROWS.filter(r => r.has).length, nTbl = IROWS.filter(r => r.notbl).length;
