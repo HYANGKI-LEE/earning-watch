@@ -1,11 +1,13 @@
 name: update-data
 
+# 분기 실적만 수집 (발행사 잔액은 update-balance.yml 에서 수동 실행)
 on:
   workflow_dispatch:          # 수동 실행 (Actions 탭 → Run workflow)
-  push:                       # 수집 코드가 바뀌면 다시 수집
+  push:                       # 실적 수집 코드가 바뀌면 다시 수집
     branches: [main]
     paths:
-      - scripts/**
+      - scripts/fetch_earnings.py
+      - scripts/dart.py
       - .github/workflows/update-data.yml
   schedule:
     # 평일 하루 3번 (KST 08:00 / 13:00 / 19:00) — cron 은 UTC 기준
@@ -26,27 +28,16 @@ env:
 jobs:
   fetch:
     runs-on: ubuntu-latest
-    timeout-minutes: 170
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
-      # 1단계: 발행사 잔액 → 끝나는 즉시 커밋 (발행사 리스트 표가 바로 갱신됨)
-      - name: 1. 대상 기업 목록 (회사채·CP·전단채 잔액 확인)
-        env:
-          DART_API_KEY: ${{ secrets.DART_API_KEY }}
-        run: python scripts/build_universe.py
-      - name: 1. 잔액 데이터 커밋
-        if: always()
-        run: bash scripts/commit_data.sh "data - 발행사 잔액 갱신" data/universe.json
-
-      # 2단계: 분기 실적 → 끝나는 즉시 커밋
-      - name: 2. 분기 실적
+      - name: 분기 실적
         env:
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
         run: python scripts/fetch_earnings.py
-      - name: 2. 실적 데이터 커밋
+      - name: 실적 데이터 커밋
         if: always()
         run: bash scripts/commit_data.sh "data - 분기 실적 갱신" data/earnings.json

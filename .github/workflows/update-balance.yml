@@ -1,0 +1,37 @@
+name: update-balance
+
+# 발행사 잔액(회사채·CP·전단채) 갱신 — 스케줄 없음, 필요할 때만 수동 실행
+on:
+  workflow_dispatch:          # Actions 탭 → update-balance → Run workflow
+  push:                       # 잔액 수집 코드가 바뀔 때만
+    branches: [main]
+    paths:
+      - scripts/build_universe.py
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-balance
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: "1"
+  TZ: Asia/Seoul
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 170
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 발행사 잔액 확인
+        env:
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+        run: python scripts/build_universe.py
+      - name: 잔액 데이터 커밋
+        if: always()
+        run: bash scripts/commit_data.sh "data - 발행사 잔액 갱신" data/universe.json
