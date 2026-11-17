@@ -8,7 +8,9 @@ on:
       - scripts/**
       - .github/workflows/update-data.yml
   schedule:
-    - cron: "0 22 * * 0-4"    # 평일 07:00 KST
+    # 평일 하루 3번 (KST 08:00 / 13:00 / 19:00) — cron 은 UTC 기준
+    - cron: "0 23 * * 0-4"    # KST 08:00 (월~금) = 전날 UTC 23시
+    - cron: "0 4,10 * * 1-5"  # KST 13:00, 19:00
 
 permissions:
   contents: write
@@ -19,6 +21,7 @@ concurrency:
 
 env:
   PYTHONUNBUFFERED: "1"       # 로그가 실행 중에 바로 보이도록
+  TZ: Asia/Seoul              # 수집일(N 표시 기준)을 한국 날짜로
 
 jobs:
   fetch:
