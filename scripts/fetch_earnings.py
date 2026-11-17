@@ -1,6 +1,6 @@
 """분기 실적 수집 (DART 다중회사 주요계정 fnlttMultiAcnt).
 
-대상: data/universe.json 의 target 기업 (상장사 ∪ 회사채/CP/전단채 발행사)
+대상: data/universe.json 의 전체 기업 (최근 12개월 정기공시 제출 기업)
 기간: 최근 6개 분기 (YoY·QoQ 계산용)
 손익은 '분기 단독' 값으로 저장 (4Q = 연간 − 3Q 누적).
 
@@ -86,8 +86,7 @@ def main() -> None:
     uni = dart.load_json("universe.json", None)
     if not uni:
         raise SystemExit("data/universe.json 이 없어요. build_universe.py 를 먼저 실행하세요.")
-    targets = {k: v for k, v in uni["companies"].items() if v.get("target")}
-    codes = sorted(targets)
+    codes = sorted(uni["companies"])  # 발행사 리스트와 같은 전체 기업
     quarters = recent_quarters()
     print(f"대상 {len(codes):,}개, 분기 {quarters}")
 

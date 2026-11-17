@@ -1,6 +1,6 @@
 // data/ 의 JSON만 읽는다 (API 직접 호출 금지)
 const $ = s => document.querySelector(s);
-const state = { period: null, group: "all", inst: new Set(), q: "", sort: { key: "dt", dir: -1 }, open: null };
+const state = { period: null, group: "issuer", inst: new Set(), q: "", sort: { key: "dt", dir: -1 }, open: null };
 let U = null, E = null, ROWS = [];
 
 const CLS = { Y: "유가", K: "코스닥", N: "코넥스", E: "비상장" };
