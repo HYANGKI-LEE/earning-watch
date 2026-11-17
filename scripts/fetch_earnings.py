@@ -60,7 +60,12 @@ def fetch_period(codes: list[str], year: int, q: int) -> dict[str, dict]:
     res: dict[str, dict] = {}
     chunks = [codes[i:i + 100] for i in range(0, len(codes), 100)]
 
+    skipped = [0]
+
     def get(chunk):
+        if skipped[0] >= 20:
+            # 건너뛴 회사가 많으면 특정 회사 문제가 아니라 API 장애 → 분할 재시도 중단(호출 폭증 방지)
+            raise RuntimeError(f"{year}Q{q}: 실패가 너무 많아 이 분기는 중단")
         try:
             return dart.call("fnlttMultiAcnt.json", corp_code=",".join(chunk),
                              bsns_year=str(year), reprt_code=Q_CODE[q]).get("list", [])
@@ -69,6 +74,7 @@ def fetch_period(codes: list[str], year: int, q: int) -> dict[str, dict]:
         except Exception as e:
             # 묶음 하나가 실패해도 전체를 멈추지 않는다: 반으로 나눠 재시도 → 문제 회사만 건너뜀
             if len(chunk) == 1:
+                skipped[0] += 1
                 print(f"  건너뜀 {chunk[0]} {year}Q{q}: {e}", flush=True)
                 return []
             m = len(chunk) // 2
