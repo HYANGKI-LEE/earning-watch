@@ -38,7 +38,7 @@ function prevYear(p) { return `${+p.slice(0, 4) - 1}${p.slice(4)}`; }
 const COLS = [
   { key: "name", label: "회사명", l: true },
   { key: "link", label: "공시 링크", l: true, nosort: true },
-  { key: "cls", label: "구분", l: true },
+  { key: "cls", label: "상장유형", l: true },
   { key: "inst", label: "발행", l: true, nosort: true },
   { key: "rev", label: "매출" },
   { key: "revY", label: "YoY", g: true },
