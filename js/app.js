@@ -13,7 +13,7 @@ function newFrom(day) {
 }
 
 const CLS = { Y: "유가", K: "코스닥", N: "코넥스", E: "비상장" };
-const INST = { bond: "회사채", cp: "CP", stb: "전단채" };
+const INST = { bond: "회사채", cp: "CP", stb: "전단채" }; // 회사채 = 공모 회사채 잔액
 const EOK = 1e8;
 
 const fmt = v => v == null || !isFinite(v) ? "–" : Math.round(v / EOK).toLocaleString("ko-KR");
@@ -143,7 +143,7 @@ function detail(r) {
       ` · 차입금의존도 ${f.dep == null ? "–" : f.dep.toFixed(1) + "%"}</div>`
     : "";
   return `<tr class="detail"><td colspan="${COLS.length}">
-    <div class="muted" style="margin-bottom:6px">${c.fs === "CFS" ? "연결" : "별도"} · 미상환 잔액(${r.balAsof || "–"}, 억원): ${bal}</div>${brw}
+    <div class="muted" style="margin-bottom:6px">${c.fs === "CFS" ? "연결" : "별도"} · 미상환 잔액(${r.balAsof || "–"}, 억원, 회사채는 공모): ${bal}</div>${brw}
     <table><thead><tr><th class="l"></th>${ps.map(p => `<th>${p}</th>`).join("")}</tr></thead><tbody>
       ${line("매출", v => fmt(v.rev))}
       ${line("영업이익", v => fmt(v.op))}
@@ -190,7 +190,8 @@ const ICOLS = [
   { key: "name", label: "기업명", l: true },
   { key: "mkt", label: "상장", l: true },
   { key: "asof", label: "최근 공시 기준", l: true },
-  { key: "bond", label: "회사채" },
+  { key: "bond", label: "공모 회사채" },
+  { key: "bpriv", label: "사모 회사채(참고)" }, // 사모사채·사모 CB/BW — 발행사 집계·총액에서 제외
   { key: "cp", label: "기업어음(CP)" },
   { key: "stb", label: "단기사채(전단채)" },
   { key: "cpstb", label: "CP+전단채" },
@@ -203,11 +204,11 @@ function buildIssuers() {
   IROWS = [];
   for (const [cc, u] of Object.entries(U.companies)) {
     const b = u.bal || {};
-    const bond = b.bond || 0, cp = b.cp || 0, stb = b.stb || 0;
+    const bond = b.bond || 0, cp = b.cp || 0, stb = b.stb || 0, bpriv = b.bond_priv || 0; // bond = 공모 회사채
     // 잔액 없는 기업도 모두 포함 (has: 잔액 > 0, notbl: 보고서에 잔액 표 없음)
     const has = bond > 0 || cp > 0 || stb > 0;
     const notbl = !u.bal || Object.values(u.bal).every(v => v == null);
-    IROWS.push({ cc, name: u.name || cc, mkt: CLS[u.cls] || u.cls || "", asof: u.bal_asof || "", bond, cp, stb, has, notbl,
+    IROWS.push({ cc, name: u.name || cc, mkt: CLS[u.cls] || u.cls || "", asof: u.bal_asof || "", bond, bpriv, cp, stb, has, notbl,
                  cpstb: cp + stb, total: bond + cp + stb });
   }
 }
@@ -227,13 +228,13 @@ function renderIssuers() {
   const num = v => v > 0 ? fmt(v) : "–";
   $("#itbl tbody").innerHTML = rows.map(r =>
     `<tr><td class="l">${r.cc}</td><td class="l">${r.name}</td><td class="l">${r.mkt}</td><td class="l">${r.asof || (r.notbl ? "잔액 표 없음" : "–")}</td>` +
-    ["bond", "cp", "stb", "cpstb", "total"].map(k => `<td>${num(r[k])}</td>`).join("") + "</tr>"
+    ["bond", "bpriv", "cp", "stb", "cpstb", "total"].map(k => `<td>${num(r[k])}</td>`).join("") + "</tr>"
   ).join("");
   const sum = k => rows.reduce((s, r) => s + r[k], 0);
   let tf = $("#itbl tfoot");
   if (!tf) { tf = document.createElement("tfoot"); $("#itbl").appendChild(tf); }
   tf.innerHTML = `<tr><td class="l" colspan="4">합계 (${rows.length.toLocaleString("ko-KR")}개사)</td>` +
-    ["bond", "cp", "stb", "cpstb", "total"].map(k => `<td>${fmt(sum(k))}</td>`).join("") + "</tr>";
+    ["bond", "bpriv", "cp", "stb", "cpstb", "total"].map(k => `<td>${fmt(sum(k))}</td>`).join("") + "</tr>";
   const n = v => v.toLocaleString("ko-KR");
   const nHas = IROWS.filter(r => r.has).length, nTbl = IROWS.filter(r => r.notbl).length;
   $("#ifilt [data-v=notbl]").hidden = !nTbl;
