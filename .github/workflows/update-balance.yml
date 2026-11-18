@@ -12,7 +12,8 @@ permissions:
   contents: write
 
 concurrency:
-  group: update-balance
+  # 실적 수집(update-data)과 같은 그룹 → 같은 DART 키를 동시에 쓰지 않고, 돌고 있는 수집이 끝나면 이어서 실행
+  group: update-data
   cancel-in-progress: false
 
 env:
