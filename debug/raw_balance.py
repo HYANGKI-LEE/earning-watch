@@ -17,5 +17,13 @@ for cc in codes:
         for k, ep in APIS.items():
             out.setdefault(cc, {}).setdefault(f"{y}_{rc}", {})[k] = dart.call(
                 ep, corp_code=cc, bsns_year=y, reprt_code=rc).get("list", [])
+# 주요사항보고서: 전환사채(CB)·신주인수권부사채(BW)·교환사채(EB) 발행결정 — 필드 구조 확인용
+DEC = {"cb": "cvbdIsDecsn.json", "bw": "bdwtIsDecsn.json", "eb": "exbdIsDecsn.json"}
+for cc in codes:
+    for k, ep in DEC.items():
+        try:
+            out[cc]["dec_" + k] = dart.call(ep, corp_code=cc, bgn_de="20190101", end_de="20261118").get("list", [])
+        except Exception as e:
+            out[cc]["dec_" + k] = f"오류: {e}"
 (here / "raw.json").write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
 print("저장:", {cc: {r: {k: len(v) for k, v in d.items()} for r, d in x.items()} for cc, x in out.items()})
