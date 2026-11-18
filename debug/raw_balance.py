@@ -6,7 +6,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import dart
 
 APIS = {"bond": "cprndNrdmpBlce.json", "cp": "entrprsBilScritsNrdmpBlce.json",
-        "stb": "srtpdPsndbtNrdmpBlce.json"}
+        "stb": "srtpdPsndbtNrdmpBlce.json",
+        "issue": "detScritsIsuAcmslt.json"}  # 채무증권 발행실적 (증권 종류: 회사채/전환사채/신주인수권부사채 등)
 REPS = [("2026", "11014"), ("2025", "11011")]  # 2026 3분기, 2025 사업보고서
 here = Path(__file__).resolve().parent
 codes = [l.strip() for l in (here / "request.txt").read_text().splitlines() if l.strip()]
