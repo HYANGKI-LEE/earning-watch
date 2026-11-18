@@ -10,9 +10,10 @@ on:
       - scripts/dart.py
       - .github/workflows/update-data.yml
   schedule:
-    # 평일 하루 3번 (KST 08:00 / 13:00 / 19:00) — cron 은 UTC 기준
-    - cron: "0 23 * * 0-4"    # KST 08:00 (월~금) = 전날 UTC 23시
-    - cron: "0 4,10 * * 1-5"  # KST 13:00, 19:00
+    # 평일 하루 3번 (KST 08:17 / 13:17 / 19:17) — cron 은 UTC 기준
+    # 정시(:00)는 GitHub 예약 작업이 몰려 몇 시간씩 밀리거나 빠지므로 17분으로 비켜 둠
+    - cron: "17 23 * * 0-4"    # KST 08:17 (월~금) = 전날 UTC 23:17
+    - cron: "17 4,10 * * 1-5"  # KST 13:17, 19:17
 
 permissions:
   contents: write

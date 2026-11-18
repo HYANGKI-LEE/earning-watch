@@ -13,7 +13,7 @@ import re
 import sys
 import traceback
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date
+from datetime import date, datetime
 
 import dart
 
@@ -157,6 +157,7 @@ def main() -> None:
 
     dart.save_json("earnings.json", {
         "updated": date.today().isoformat(),
+        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),  # 수집 시각(KST, TZ=Asia/Seoul)
         "periods": [f"{y}Q{q}" for y, q in quarters],
         "companies": companies,
     }, compact=True)

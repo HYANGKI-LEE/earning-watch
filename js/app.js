@@ -2,7 +2,15 @@
 const $ = s => document.querySelector(s);
 const state = { period: null, group: "issuer", inst: new Set(), q: "", sort: { key: "dt", dir: -1 }, open: null };
 let U = null, E = null, ROWS = [];
-let NEW_DAY = ""; // 수집일(YYYYMMDD) — 이날 접수된 공시에 N 표시
+let NEW_FROM = ""; // 이 날짜(YYYYMMDD) 이후 접수 공시에 N 표시 = 수집일 + 직전 영업일
+
+// 수집일의 직전 영업일 (월요일 → 금요일). 아침 수집 땐 당일 공시가 아직 없으므로 전날 것도 '새 공시'로
+function newFrom(day) {
+  if (!day) return "";
+  const d = new Date(+day.slice(0, 4), +day.slice(5, 7) - 1, +day.slice(8, 10));
+  do d.setDate(d.getDate() - 1); while (d.getDay() === 0 || d.getDay() === 6);
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+}
 
 const CLS = { Y: "유가", K: "코스닥", N: "코넥스", E: "비상장" };
 const INST = { bond: "회사채", cp: "CP", stb: "전단채" };
@@ -62,7 +70,7 @@ function build() {
       dt: v.dt, rno: v.rno || "",
       // 같은 날 공시는 접수번호(일련번호) 순서로 최신이 위로
       dtKey: v.rno || v.dt,
-      isNew: !!NEW_DAY && v.dt === NEW_DAY,
+      isNew: !!NEW_FROM && v.dt >= NEW_FROM,
     });
   }
 }
@@ -97,7 +105,7 @@ function render() {
   const html = [];
   for (const r of rows.slice(0, 1000)) {
     html.push(`<tr class="row" data-cc="${r.cc}">` + COLS.map(c => {
-      if (c.key === "name") return `<td class="l">${r.name}${r.isNew ? '<span class="new" title="수집일에 접수된 공시">N</span>' : ""}</td>`;
+      if (c.key === "name") return `<td class="l">${r.name}${r.isNew ? '<span class="new" title="최근 공시 (수집일·직전 영업일 접수)">N</span>' : ""}</td>`;
       if (c.key === "link") return `<td class="l">${r.rno ? `<a class="dartlink" href="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${r.rno}" target="_blank" rel="noopener">보고서</a>` : "–"}</td>`;
       if (c.key === "cls") return `<td class="l">${CLS[r.cls] || r.cls}</td>`;
       if (c.key === "inst") return `<td class="l">${r.issuer.map(i => `<span class="badge">${INST[i]}</span>`).join("")}</td>`;
@@ -113,7 +121,10 @@ function render() {
     if (state.open === r.cc) html.push(detail(r));
   }
   $("#tbl tbody").innerHTML = html.join("");
+  // 새 공시 수: 이 필터 안 / 전체 — 다른 필터에 숨은 새 공시도 알 수 있게
+  const nNew = rows.filter(r => r.isNew).length, nAll = ROWS.filter(r => r.isNew).length;
   $("#status").textContent = `${state.period} · ${rows.length.toLocaleString("ko-KR")}개사` +
+    ` · 새 공시(N) ${nNew}건${nAll !== nNew ? ` (전체 ${nAll}건)` : ""}` +
     (rows.length > 1000 ? " (상위 1,000개 표시 — 검색·필터로 좁혀주세요)" : "");
 }
 
@@ -256,12 +267,12 @@ pU.then(u => { U = u; bindIssuers(); buildIssuers(); renderIssuers(); })
 
 Promise.all([pU, getJSON("data/earnings.json")])
   .then(([u, e]) => {
-    U = u; E = e; NEW_DAY = (E.updated || "").replace(/-/g, "");
+    U = u; E = e; NEW_FROM = newFrom(E.updated);
     // 데이터가 있는 분기만, 최신이 기본
     const ps = E.periods.filter(p => Object.values(E.companies).some(c => c.d[p]));
     $("#period").innerHTML = ps.slice().reverse().map(p => `<option>${p}</option>`).join("");
     state.period = ps[ps.length - 1];
-    $("#updated").textContent = `· 갱신 ${E.updated}`;
+    $("#updated").textContent = `· 마지막 수집 ${E.updated_at || E.updated} (평일 08·13·19시경 자동)`;
     bind(); build(); render();
   })
   .catch(() => { $("#status").textContent = "아직 수집된 데이터가 없어요. (Actions 에서 데이터 수집을 먼저 실행하세요)"; });
