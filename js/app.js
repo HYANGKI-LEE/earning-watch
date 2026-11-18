@@ -1,6 +1,6 @@
 // data/ 의 JSON만 읽는다 (API 직접 호출 금지)
 const $ = s => document.querySelector(s);
-const state = { period: null, group: "issuer", inst: new Set(), q: "", sort: { key: "dt", dir: -1 }, open: null };
+const state = { period: null, mode: "q", group: "issuer", inst: new Set(), q: "", sort: { key: "dt", dir: -1 }, open: null };
 let U = null, E = null, F = {}, ROWS = []; // F: 상세 재무제표 요약(fs_index.json, 없어도 동작)
 let NEW_FROM = ""; // 이 날짜(YYYYMMDD) 이후 접수 공시에 N 표시 = 수집일 + 직전 영업일
 
@@ -33,6 +33,8 @@ function turn(cur, prev) { // 흑자전환/적자전환/적자지속
   if (prev < 0 && cur < 0) return "적지";
   return null;
 }
+// 손익 값: 분기 단독(rev/op/ni) 또는 누적(crev/cop/cni) — 화면 우상단 '분기/누적' 버튼
+const pick = (v, k) => v == null ? null : (state.mode === "c" ? v["c" + k] : v[k]) ?? null;
 function prevYear(p) { return `${+p.slice(0, 4) - 1}${p.slice(4)}`; }
 
 const COLS = [
@@ -63,10 +65,16 @@ function build() {
     ROWS.push({
       cc, name: u.name || cc, cls: u.cls || "E", listed: !!u.listed, issuer: u.issuer || [],
       bal: u.bal || {}, balAsof: u.bal_asof, fs: c.fs,
-      rev: v.rev, revY: growth(v.rev, y.rev),
-      op: v.op, opY: growth(v.op, y.op), opT: turn(v.op, y.op),
-      opm: v.rev ? v.op / v.rev * 100 : null,
-      ni: v.ni, niY: growth(v.ni, y.ni), niT: turn(v.ni, y.ni),
+      ...(() => {
+        const rev = pick(v, "rev"), op = pick(v, "op"), ni = pick(v, "ni");
+        const pr = pick(y, "rev"), po = pick(y, "op"), pn = pick(y, "ni");
+        return {
+          rev, revY: growth(rev, pr),
+          op, opY: growth(op, po), opT: turn(op, po),
+          opm: rev && op != null ? op / rev * 100 : null,
+          ni, niY: growth(ni, pn), niT: turn(ni, pn),
+        };
+      })(),
       debt: v.eq > 0 ? v.liab / v.eq * 100 : null,
       // 차입금의존도 = 차입금 ÷ 자산총계 (상세 재무제표가 이 분기 것일 때만)
       dep: F[cc] && F[cc].p === p && !F[cc].na ? F[cc].dep : null,
@@ -126,7 +134,7 @@ function render() {
   $("#tbl tbody").innerHTML = html.join("");
   // 새 공시 수: 이 필터 안 / 전체 — 다른 필터에 숨은 새 공시도 알 수 있게
   const nNew = rows.filter(r => r.isNew).length, nAll = ROWS.filter(r => r.isNew).length;
-  $("#status").textContent = `${state.period} · ${rows.length.toLocaleString("ko-KR")}개사` +
+  $("#status").textContent = `${state.period}${state.mode === "c" ? " 누적" : ""} · ${rows.length.toLocaleString("ko-KR")}개사` +
     ` · 새 공시(N) ${nNew}건${nAll !== nNew ? ` (전체 ${nAll}건)` : ""}` +
     (rows.length > 1000 ? " (상위 1,000개 표시 — 검색·필터로 좁혀주세요)" : "");
 }
@@ -145,9 +153,9 @@ function detail(r) {
   return `<tr class="detail"><td colspan="${COLS.length}">
     <div class="muted" style="margin-bottom:6px">${c.fs === "CFS" ? "연결" : "별도"} · 미상환 잔액(${r.balAsof || "–"}, 억원, 회사채는 공모): ${bal}</div>${brw}
     <table><thead><tr><th class="l"></th>${ps.map(p => `<th>${p}</th>`).join("")}</tr></thead><tbody>
-      ${line("매출", v => fmt(v.rev))}
-      ${line("영업이익", v => fmt(v.op))}
-      ${line("순이익", v => fmt(v.ni))}
+      ${line(state.mode === "c" ? "매출(누적)" : "매출", v => fmt(pick(v, "rev")))}
+      ${line(state.mode === "c" ? "영업이익(누적)" : "영업이익", v => fmt(pick(v, "op")))}
+      ${line(state.mode === "c" ? "순이익(누적)" : "순이익", v => fmt(pick(v, "ni")))}
       ${line("자산총계", v => fmt(v.asset))}
       ${line("부채총계", v => fmt(v.liab))}
       ${line("자본총계", v => fmt(v.eq))}
@@ -157,6 +165,13 @@ function detail(r) {
 
 function bind() {
   $("#period").onchange = e => { state.period = e.target.value; build(); render(); };
+  $("#mode").onclick = e => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    state.mode = b.dataset.v;
+    $("#mode").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+    build(); render();
+  };
   $("#q").oninput = e => { state.q = e.target.value; render(); };
   $("#group").onclick = e => {
     const b = e.target.closest("button"); if (!b) return;
