@@ -1,7 +1,7 @@
 // data/ 의 JSON만 읽는다 (API 직접 호출 금지)
 const $ = s => document.querySelector(s);
 const state = { period: null, group: "issuer", inst: new Set(), q: "", sort: { key: "dt", dir: -1 }, open: null };
-let U = null, E = null, ROWS = [];
+let U = null, E = null, F = {}, ROWS = []; // F: 상세 재무제표 요약(fs_index.json, 없어도 동작)
 let NEW_FROM = ""; // 이 날짜(YYYYMMDD) 이후 접수 공시에 N 표시 = 수집일 + 직전 영업일
 
 // 수집일의 직전 영업일 (월요일 → 금요일). 아침 수집 땐 당일 공시가 아직 없으므로 전날 것도 '새 공시'로
@@ -48,6 +48,7 @@ const COLS = [
   { key: "ni", label: "순이익" },
   { key: "niY", label: "YoY", g: true, t: "niT" },
   { key: "debt", label: "부채비율" },
+  { key: "dep", label: "차입금의존도" },
   { key: "dt", label: "공시일" },
 ];
 
@@ -67,6 +68,8 @@ function build() {
       opm: v.rev ? v.op / v.rev * 100 : null,
       ni: v.ni, niY: growth(v.ni, y.ni), niT: turn(v.ni, y.ni),
       debt: v.eq > 0 ? v.liab / v.eq * 100 : null,
+      // 차입금의존도 = 차입금 ÷ 자산총계 (상세 재무제표가 이 분기 것일 때만)
+      dep: F[cc] && F[cc].p === p && !F[cc].na ? F[cc].dep : null,
       dt: v.dt, rno: v.rno || "",
       // 같은 날 공시는 접수번호(일련번호) 순서로 최신이 위로
       dtKey: v.rno || v.dt,
@@ -115,7 +118,7 @@ function render() {
         if (t) return `<td class="${t === "흑전" ? "up" : "down"}">${t}</td>`;
         return `<td class="${cls(r[c.key])}">${pct(r[c.key])}</td>`;
       }
-      if (c.key === "opm" || c.key === "debt") return `<td>${r[c.key] == null ? "–" : r[c.key].toFixed(1) + "%"}</td>`;
+      if (c.key === "opm" || c.key === "debt" || c.key === "dep") return `<td>${r[c.key] == null ? "–" : r[c.key].toFixed(1) + "%"}</td>`;
       return `<td>${fmt(r[c.key])}</td>`;
     }).join("") + "</tr>");
     if (state.open === r.cc) html.push(detail(r));
@@ -133,8 +136,14 @@ function detail(r) {
   const ps = E.periods.filter(p => c.d[p]); // 과거 → 최신 (최신이 오른쪽)
   const line = (lab, f) => `<tr><th class="l">${lab}</th>${ps.map(p => `<td>${f(c.d[p])}</td>`).join("")}</tr>`;
   const bal = Object.entries(INST).map(([k, n]) => `${n} ${fmt(r.bal[k])}`).join(" · ");
+  const f = F[r.cc];
+  const brw = f && f.items && !f.na
+    ? `<div class="muted" style="margin-bottom:6px">차입금(${f.p}, ${f.fs === "CFS" ? "연결" : "별도"}, 억원): ${fmt(f.brw)}` +
+      (f.items.length ? ` = ${f.items.map(([n, a]) => `${n} ${fmt(a)}`).join(" + ")}` : "") +
+      ` · 차입금의존도 ${f.dep == null ? "–" : f.dep.toFixed(1) + "%"}</div>`
+    : "";
   return `<tr class="detail"><td colspan="${COLS.length}">
-    <div class="muted" style="margin-bottom:6px">${c.fs === "CFS" ? "연결" : "별도"} · 미상환 잔액(${r.balAsof || "–"}, 억원): ${bal}</div>
+    <div class="muted" style="margin-bottom:6px">${c.fs === "CFS" ? "연결" : "별도"} · 미상환 잔액(${r.balAsof || "–"}, 억원): ${bal}</div>${brw}
     <table><thead><tr><th class="l"></th>${ps.map(p => `<th>${p}</th>`).join("")}</tr></thead><tbody>
       ${line("매출", v => fmt(v.rev))}
       ${line("영업이익", v => fmt(v.op))}
@@ -265,9 +274,10 @@ const pU = getJSON("data/universe.json");
 pU.then(u => { U = u; bindIssuers(); buildIssuers(); renderIssuers(); })
   .catch(() => { $("#istatus").textContent = "아직 발행사 목록이 없어요. (데이터 수집 중)"; });
 
-Promise.all([pU, getJSON("data/earnings.json")])
-  .then(([u, e]) => {
-    U = u; E = e; NEW_FROM = newFrom(E.updated);
+const pF = getJSON("data/fs_index.json").then(f => f.companies).catch(() => ({})); // 없으면 빈칸
+Promise.all([pU, getJSON("data/earnings.json"), pF])
+  .then(([u, e, f]) => {
+    U = u; E = e; F = f; NEW_FROM = newFrom(E.updated);
     // 데이터가 있는 분기만, 최신이 기본
     const ps = E.periods.filter(p => Object.values(E.companies).some(c => c.d[p]));
     $("#period").innerHTML = ps.slice().reverse().map(p => `<option>${p}</option>`).join("");

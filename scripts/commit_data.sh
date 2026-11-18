@@ -5,7 +5,7 @@ set -u
 msg="$1"; shift
 git config user.name "github-actions[bot]"
 git config user.email "github-actions[bot]@users.noreply.github.com"
-for f in "$@"; do [ -f "$f" ] && git add "$f"; done
+for f in "$@"; do [ -e "$f" ] && git add "$f"; done
 if git diff --cached --quiet; then
   echo "변경 없음: $*"; exit 0
 fi
