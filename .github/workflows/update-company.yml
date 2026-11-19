@@ -1,0 +1,37 @@
+name: update-company
+
+# 기업개황(업종코드 등) 수집 — 새 회사만 조회, 90일 지나면 갱신. 스케줄 없음, 필요할 때 수동 실행
+on:
+  workflow_dispatch:          # Actions 탭 → update-company → Run workflow
+  push:
+    branches: [main]
+    paths:
+      - scripts/fetch_company.py
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-data          # 실적·잔액 수집과 같은 그룹 → DART 키 동시 사용 방지
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: "1"
+  TZ: Asia/Seoul
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 기업개황
+        env:
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+        run: python scripts/fetch_company.py
+      - name: 기업개황 커밋
+        if: always()
+        run: bash scripts/commit_data.sh "data - 기업개황 갱신" data/company.json
