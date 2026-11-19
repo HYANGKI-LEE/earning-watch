@@ -2,7 +2,9 @@
 
 대상: data/universe.json 의 전체 기업 (발행사 리스트와 같음)
 - 이미 받은 회사는 REFRESH_DAYS 가 지나기 전엔 다시 부르지 않는다 (새 회사만 조회).
-- induty_code = 한국표준산업분류(KSIC) 코드. 업종명은 API 에 없어서 코드만 저장.
+- induty_code = 한국표준산업분류(KSIC 제11차) 코드. 업종명은 API 에 없어서
+  data/ksic11.json(통계분류포털 분류표)으로 붙인다: induty_name + 대·중분류.
+  (분류표만으로 다시 붙이기: python scripts/fetch_company.py --names — API 호출 없음)
 
 결과: data/company.json
 """
@@ -24,6 +26,33 @@ BUDGET_MIN = float(os.environ.get("COMPANY_BUDGET_MIN", "60"))
 FIELDS = ("corp_name", "corp_name_eng", "stock_name", "stock_code", "ceo_nm", "corp_cls",
           "jurir_no", "bizr_no", "adres", "hm_url", "ir_url", "phn_no", "fax_no",
           "induty_code", "est_dt", "acc_mt")
+
+
+def add_names(companies: dict) -> int:
+    """업종코드 → 업종명, 대분류(A~U), 중분류(2자리) 이름"""
+    K = dart.load_json("ksic11.json", {"codes": {}})["codes"]
+    n = 0
+    for v in companies.values():
+        code = v.get("induty_code", "")
+        chain, c = [], code
+        while c in K:          # 위로 거슬러 올라가며 [코드, 이름] 모으기
+            chain.append([c, K[c][0]])
+            c = K[c][1]
+        chain.reverse()        # 대분류 → … → 해당 코드
+        v["induty_name"] = chain[-1][1] if chain else ""
+        v["ind_sec"] = f"{chain[0][0]}.{chain[0][1]}" if chain else ""                    # 대분류
+        v["ind_div"] = f"{chain[1][0]}.{chain[1][1]}" if len(chain) > 1 else ""           # 중분류
+        n += bool(chain)
+    return n
+
+
+def names_only() -> None:
+    doc = dart.load_json("company.json", None)
+    if not doc:
+        raise SystemExit("data/company.json 이 없어요.")
+    n = add_names(doc["companies"])
+    dart.save_json("company.json", doc, compact=True)
+    print(f"업종명 매칭 {n:,}/{len(doc['companies']):,}개사")
 
 
 def main() -> None:
@@ -73,6 +102,7 @@ def main() -> None:
             if done % 500 == 0:
                 print(f"  기업개황 {done:,}/{len(todo):,}", flush=True)
 
+    print(f"업종명 매칭 {add_names(out):,}/{len(out):,}개사", flush=True)
     dart.save_json("company.json", {
         "updated": today.isoformat(),
         "companies": dict(sorted(out.items())),
@@ -82,4 +112,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    names_only() if "--names" in sys.argv else main()
