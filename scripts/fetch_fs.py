@@ -32,8 +32,9 @@ SJ_KEEP = ("BS", "IS", "CIS", "CF")
 FS_DIR = dart.DATA_DIR / "fs"
 
 # 차입금으로 볼 계정 (재무상태표, 계정명 기준)
-BRW_INC = ("차입금", "사채", "리스부채", "유동성장기부채", "기업어음")
-BRW_EXC = ("할인", "할증", "발행비", "이자", "충당", "채권", "대여", "현재가치", "조정", "상환",
+BRW_INC = ("차입금", "차입부채", "사채", "리스부채", "유동성장기부채", "기업어음")
+BRW_RE = re.compile(r"리스(유동|비유동)?부채")  # '리스유동부채'·'리스비유동부채' 같은 어순
+BRW_EXC = ("할인", "할증", "발행비", "미지급이자", "이자비용", "충당", "채권", "대여", "현재가치", "조정", "상환",
            "파생", "전환권", "신주인수권", "선급", "미수", "자산")
 
 
@@ -44,7 +45,7 @@ def nm(s: str) -> str:
 
 def is_brw(name: str) -> bool:
     n = nm(name)
-    return any(k in n for k in BRW_INC) and not any(k in n for k in BRW_EXC)
+    return (any(k in n for k in BRW_INC) or bool(BRW_RE.search(n))) and not any(k in n for k in BRW_EXC)
 
 
 def drop_totals(items: list[list]) -> list[list]:
@@ -111,6 +112,22 @@ def summarize(sj: dict) -> dict:
     dep = brw / asset * 100 if asset else None
     return {"brw": brw, "dep": round(dep, 2) if dep is not None else None,
             "asset": asset, "items": items}
+
+
+def resummarize() -> None:
+    """저장된 회사별 파일로 차입금·차입금의존도만 다시 계산 (API 호출 없음 — 계정 규칙을 바꿨을 때)"""
+    idx = dart.load_json("fs_index.json", {"companies": {}})
+    n = 0
+    for cc, v in idx["companies"].items():
+        path = FS_DIR / f"{cc}.json"
+        if v.get("na") or not v.get("p") or not path.exists():
+            continue
+        per = json.loads(path.read_text(encoding="utf-8"))["p"].get(v["p"])
+        if per:
+            v.update(summarize(per))
+            n += 1
+    dart.save_json("fs_index.json", idx, compact=True)
+    print(f"차입금 재계산 {n:,}개사")
 
 
 def main() -> None:
@@ -202,4 +219,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    resummarize() if "--resummarize" in sys.argv else main()
