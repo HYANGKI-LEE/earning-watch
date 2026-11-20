@@ -59,7 +59,7 @@ function build() {
   ROWS = [];
   for (const [cc, c] of Object.entries(E.companies)) {
     const v = c.d[p];
-    if (!v) continue;
+    if (!v || !v.rno) continue; // 비교 열로만 채워진 기간(보고서 없음)은 목록에서 제외
     const u = U.companies[cc] || {};
     const y = c.d[py] || {};
     ROWS.push({
@@ -152,7 +152,7 @@ function detail(r) {
     : "";
   return `<tr class="detail"><td colspan="${COLS.length}">
     <div class="muted" style="margin-bottom:6px">${c.fs === "CFS" ? "연결" : "별도"} · 미상환 잔액(${r.balAsof || "–"}, 억원, 회사채는 공모): ${bal}</div>${brw}
-    <table><thead><tr><th class="l"></th>${ps.map(p => `<th>${p}</th>`).join("")}</tr></thead><tbody>
+    <table><thead><tr><th class="l"></th>${ps.map(p => c.d[p].rs ? `<th title="이후 보고서에서 회사가 재작성한 숫자">${p}*</th>` : `<th>${p}</th>`).join("")}</tr></thead><tbody>
       ${line(state.mode === "c" ? "매출(누적)" : "매출", v => fmt(pick(v, "rev")))}
       ${line(state.mode === "c" ? "영업이익(누적)" : "영업이익", v => fmt(pick(v, "op")))}
       ${line(state.mode === "c" ? "순이익(누적)" : "순이익", v => fmt(pick(v, "ni")))}

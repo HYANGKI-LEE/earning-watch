@@ -3,6 +3,9 @@
 대상: data/universe.json 의 전체 기업 (최근 12개월 정기공시 제출 기업)
 기간: 최근 6개 분기 (YoY·QoQ 계산용)
 손익은 '분기 단독' 값으로 저장 (4Q = 연간 − 3Q 누적).
+과거 분기 값은 '재작성' 숫자 우선: 1년 뒤 같은 분기 보고서의 비교(전기) 열이 있으면 그 값으로 덮어쓴다
+(중단영업·회계변경 등으로 회사가 다시 계산한 숫자 — 보고서 화면의 전년 열과 같음).
+그래서 YoY = 이번 보고서의 당기 ÷ 같은 보고서의 전기 가 되고, 화면 범위 1년 전 분기도 비교 열로 채워진다.
 
 결과: data/earnings.json
 """
@@ -95,8 +98,44 @@ def fetch_period(codes: list[str], year: int, q: int) -> dict[str, dict]:
             fs[key] = {
                 "amt": dart.to_num(r.get("thstrm_amount")),
                 "add": dart.to_num(r.get("thstrm_add_amount")),
+                "frm": dart.to_num(r.get("frmtrm_amount")),       # 전기 (손익: 전년 같은 분기 3개월·사업보고서는 전년 연간 / 재무상태: 전년 말)
+                "fadd": dart.to_num(r.get("frmtrm_add_amount")),  # 전기 누적
             }
     return res
+
+
+def restated(raw: dict, cc: str, fsd: str) -> dict[str, dict]:
+    """각 보고서의 비교(전기) 열 → {전년 기간: 값} — 회사가 재작성한 과거 숫자"""
+    R: dict[str, dict] = {}
+    for (y, q) in sorted(raw):           # 과거 → 최신 (같은 대상은 나중 보고서가 덮어씀)
+        fs = raw[(y, q)].get(cc, {}).get(fsd)
+        if not fs:
+            continue
+        r = R.setdefault(f"{y - 1}Q{q}", {})
+        for k in FLOW:
+            e = fs.get(k)
+            if not e:
+                continue
+            frm, fadd = e.get("frm"), e.get("fadd")
+            if q == 4:  # 사업보고서 전기 = 전년 연간 → 4Q 단독 = 전년 연간 − (올해 3Q 보고서의 전년 3Q 누적)
+                if frm is not None:
+                    r["c" + k] = frm
+                    c3 = raw.get((y, 3), {}).get(cc, {}).get(fsd, {}).get(k, {}).get("fadd")
+                    if c3 is not None:
+                        r[k] = frm - c3
+            else:
+                if frm is not None:
+                    r[k] = frm
+                c = fadd if fadd is not None else (frm if q == 1 else None)
+                if c is not None:
+                    r["c" + k] = c
+        # 재무상태 비교 열은 '전년 말' → 전년 4Q 값 (그해 가장 늦은 보고서 기준)
+        pe = R.setdefault(f"{y - 1}Q4", {})
+        for k in STOCK:
+            e = fs.get(k)
+            if e and e.get("frm") is not None:
+                pe[k] = e["frm"]
+    return {p: r for p, r in R.items() if r}
 
 
 def main() -> None:
@@ -152,6 +191,15 @@ def main() -> None:
                 if k in fs:
                     v[k] = fs[k]["amt"]
             d[f"{y}Q{q}"] = v
+        # 재작성 숫자로 덮어쓰기 (원래 숫자와 다르면 rs=1 표시). 화면 범위 밖 전년 분기는 비교용으로만 저장
+        for p, r in restated(raw, cc, fsd).items():
+            if p in d:
+                if any(d[p].get(k) is None or abs(d[p][k] - x) > 0.5 for k, x in r.items()):
+                    d[p]["rs"] = 1
+                d[p].update(r)
+            else:
+                d[p] = r
+        d = dict(sorted(d.items()))
         if d:
             companies[cc] = {"fs": fsd, "d": d}
 
