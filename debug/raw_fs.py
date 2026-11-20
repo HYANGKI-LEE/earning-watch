@@ -23,5 +23,11 @@ for cc in codes:
     o["reports"] = [f"{r.get('rcept_dt')} {r.get('report_nm', '').strip()}" for r in l]
     c = dart.call("company.json", corp_code=cc)
     o["corp"] = {k: c.get(k) for k in ("corp_name", "corp_cls", "acc_mt")}
+# 영업이익 행 원본 필드 전체 (전기 3개월/누적 값이 있는지)
+for cc in codes:
+    for ep, extra in (("fnlttMultiAcnt.json", {}), ("fnlttSinglAcntAll.json", {"fs_div": "CFS"})):
+        rows = dart.call(ep, corp_code=cc, bsns_year="2026", reprt_code="11014", **extra).get("list", [])
+        out[cc]["op_" + ep.split(".")[0]] = [r for r in rows if "영업이익" in (r.get("account_nm") or "")
+                                             and r.get("fs_div", "CFS") == "CFS"][:2]
 (here / "raw_fs.json").write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
 print("저장", len(out))
