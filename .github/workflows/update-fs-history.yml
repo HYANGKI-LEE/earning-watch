@@ -1,0 +1,44 @@
+name: update-fs-history
+
+# 과거 분기 상세 재무제표 백필 (분기별 차입금의존도용) — 하루 한도(약 2만 회)를 넘지 않게 나눠서.
+# 매일 새벽 1번 돌고, 다 채워지면 호출 0회로 바로 끝난다.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/update-fs-history.yml
+  schedule:
+    - cron: "37 16 * * *"     # KST 01:37 (한도가 새로 시작된 뒤)
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-data          # 실적·잔액 수집과 같은 그룹 → DART 키 동시 사용 방지
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: "1"
+  TZ: Asia/Seoul
+  FS_MAX_CALLS: "12000"       # 낮 정기 수집 몫을 남겨 둠
+  FS_BUDGET_MIN: "100"
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 130
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main               # 대기 중 다른 수집이 커밋했을 수 있으니 최신 데이터에서 시작
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 과거 분기 상세 재무제표
+        env:
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+        run: python scripts/fetch_fs.py --history
+      - name: 커밋
+        if: always()
+        run: bash scripts/commit_data.sh "data - 과거 분기 상세 재무제표" data/fs_index.json data/fs

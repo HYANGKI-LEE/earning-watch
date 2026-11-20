@@ -6,7 +6,10 @@
 3) 회사별 파일 data/fs/<corp_code>.json 에 재무상태표·손익·포괄손익·현금흐름표 전 계정 저장
    (자본변동표는 용량이 커서 제외, 회사당 최근 KEEP 개 분기만 보관).
 4) 차입금(단기·장기차입금, 사채, 유동성장기부채, 리스부채 등)과 차입금의존도는
-   data/fs_index.json 에 모아 화면 표에서 바로 쓴다.
+   data/fs_index.json 에 모아 화면 표에서 바로 쓴다 (h = 분기별 차입금의존도).
+
+--history : 최신 분기뿐 아니라 화면에 나오는 과거 분기(최근 KEEP 개)까지 비어 있는 것을 채운다 (백필용).
+--resummarize : 저장된 파일로 차입금만 다시 계산 (API 호출 없음).
 """
 from __future__ import annotations
 
@@ -24,7 +27,7 @@ import dart
 WORKERS = int(os.environ.get("DART_WORKERS", "10"))
 MAX_CALLS = int(os.environ.get("FS_MAX_CALLS", "8000"))       # 한 번 실행 호출 상한 (일일 한도 보호)
 BUDGET_MIN = float(os.environ.get("FS_BUDGET_MIN", "100"))    # 시간 예산 — 넘으면 저장하고 다음 실행에서 이어서
-KEEP = 4                                                      # 회사 파일에 보관할 분기 수
+KEEP = 6                                                      # 회사 파일에 보관할 분기 수 (화면 표의 열 수와 같게)
 MAX_TRIES = 3                                                 # 데이터 없음(013) 재시도 횟수
 
 Q_CODE = {1: "11013", 2: "11012", 3: "11014", 4: "11011"}
@@ -114,109 +117,139 @@ def summarize(sj: dict) -> dict:
             "asset": asset, "items": items}
 
 
+def hist(doc: dict) -> dict:
+    """회사 파일의 분기별 차입금의존도 {분기: %}"""
+    return {p: summarize(per)["dep"] for p, per in sorted(doc["p"].items())}
+
+
 def resummarize() -> None:
     """저장된 회사별 파일로 차입금·차입금의존도만 다시 계산 (API 호출 없음 — 계정 규칙을 바꿨을 때)"""
     idx = dart.load_json("fs_index.json", {"companies": {}})
     n = 0
     for cc, v in idx["companies"].items():
         path = FS_DIR / f"{cc}.json"
-        if v.get("na") or not v.get("p") or not path.exists():
+        if not path.exists():
             continue
-        per = json.loads(path.read_text(encoding="utf-8"))["p"].get(v["p"])
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        v["h"] = hist(doc)
+        per = doc["p"].get(v.get("p")) if not v.get("na") else None
         if per:
             v.update(summarize(per))
-            n += 1
+        n += 1
     dart.save_json("fs_index.json", idx, compact=True)
     print(f"차입금 재계산 {n:,}개사")
 
 
-def main() -> None:
+def load_doc(cc: str) -> dict:
+    path = FS_DIR / f"{cc}.json"
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"p": {}}
+
+
+def main(history: bool = False) -> None:
     E = dart.load_json("earnings.json", None)
     if not E:
         raise SystemExit("data/earnings.json 이 없어요. fetch_earnings.py 를 먼저 실행하세요.")
     U = dart.load_json("universe.json", {"companies": {}})["companies"]
     idx = dart.load_json("fs_index.json", {"companies": {}})
     I = idx["companies"]
+    shown = E["periods"][-KEEP:]
 
-    # 회사별 최신 분기 보고서 → 저장된 것과 다르면 대상
-    todo = []
+    # 회사별 대상 분기 목록 [(분기, rno, 최신 여부)]
+    todo: dict[str, list] = {}
     for cc, c in E["companies"].items():
-        ps = [p for p in E["periods"] if p in c["d"]]
+        ps = [p for p in shown if (c["d"].get(p) or {}).get("rno")]
         if not ps:
             continue
         p = ps[-1]
-        rno = c["d"][p].get("rno")
-        if not rno:
-            continue
+        rno = c["d"][p]["rno"]
         old = I.get(cc, {})
-        if old.get("rno") == rno and (not old.get("na") or old.get("tries", 0) >= MAX_TRIES):
-            continue
-        todo.append((cc, p, rno, c["fs"]))
-    # 회사채·CP 발행사 먼저 → 상장사 → 나머지 (백필이 중간에 멈춰도 중요한 회사부터 채워지게)
-    todo.sort(key=lambda t: (not U.get(t[0], {}).get("issuer"), not U.get(t[0], {}).get("listed"), t[0]))
-    print(f"상세 재무제표 대상 {len(todo):,}개사 (저장됨 {len(I):,}), 병렬 {WORKERS}, "
-          f"호출 상한 {MAX_CALLS:,}, 시간 예산 {BUDGET_MIN:g}분", flush=True)
+        items = []
+        if not (old.get("rno") == rno and (not old.get("na") or old.get("tries", 0) >= MAX_TRIES)):
+            items.append((p, rno, True))
+        if history:
+            doc = load_doc(cc)
+            for hp in ps[:-1]:
+                r = c["d"][hp]["rno"]
+                have = doc["p"].get(hp, {}).get("rno")
+                if have != r and doc.get("na", {}).get(hp) != r:
+                    items.append((hp, r, False))
+        if items:
+            todo[cc] = (items, c["fs"])
+    # 회사채·CP 발행사 먼저 → 상장사 → 나머지 (중간에 멈춰도 중요한 회사부터 채워지게)
+    order = sorted(todo, key=lambda cc: (not U.get(cc, {}).get("issuer"), not U.get(cc, {}).get("listed"), cc))
+    n_rep = sum(len(v[0]) for v in todo.values())
+    print(f"상세 재무제표 대상 {len(todo):,}개사 / 보고서 {n_rep:,}건 ({'과거 분기 포함' if history else '최신 분기'}) "
+          f"(저장됨 {len(I):,}), 병렬 {WORKERS}, 호출 상한 {MAX_CALLS:,}, 시간 예산 {BUDGET_MIN:g}분", flush=True)
 
     FS_DIR.mkdir(parents=True, exist_ok=True)
     deadline = time.monotonic() + BUDGET_MIN * 60
     used = [0]
     stop = [False]
 
-    def work(t):
-        cc, p, rno, fs = t
-        if stop[0] or time.monotonic() > deadline or used[0] + 2 > MAX_CALLS:
-            return None
-        y, q = int(p[:4]), int(p[-1])
-        div, rows, n = fetch_one(cc, y, q, fs)
-        used[0] += n
-        return t, div, rows
+    def work(cc):
+        """한 회사의 대상 분기들을 차례로 (같은 파일을 여러 스레드가 동시에 쓰지 않게 회사 단위)"""
+        items, fs = todo[cc]
+        got = []
+        for p, rno, latest in items:
+            if stop[0] or time.monotonic() > deadline or used[0] + 2 > MAX_CALLS:
+                break
+            y, q = int(p[:4]), int(p[-1])
+            div, rows, n = fetch_one(cc, y, q, fs)
+            used[0] += n
+            got.append((p, rno, latest, div, rows))
+        return cc, got
 
     done = empty = failed = 0
     with ThreadPoolExecutor(WORKERS) as ex:
-        futs = [ex.submit(work, t) for t in todo]
+        futs = [ex.submit(work, cc) for cc in order]
         for f in as_completed(futs):
             try:
-                r = f.result()
+                cc, got = f.result()
             except dart.DartLimitError as e:
                 if not stop[0]:
                     print(f"중단: {e}", file=sys.stderr, flush=True)
                 stop[0] = True
                 continue
-            except Exception as e:  # 한 회사 실패는 다음 실행에서 재시도
+            except Exception:  # 한 회사 실패는 다음 실행에서 재시도
                 failed += 1
                 continue
-            if r is None:
+            if not got:
                 continue
-            (cc, p, rno, fs), div, rows = r
-            done += 1
-            if not rows:
-                empty += 1
-                old = I.get(cc, {})
-                tries = old.get("tries", 0) + 1 if old.get("rno") == rno else 1
-                # 이전 분기 값은 남겨두되, 이번 보고서는 '아직 없음'으로 표시
-                I[cc] = {**{k: v for k, v in old.items() if k not in ("rno", "na", "tries")},
-                         "rno": rno, "na": 1, "tries": tries}
-                continue
-            sj = compact(rows)
-            # 회사 파일: 분기별 전 계정 (최근 KEEP 개 분기)
-            path = FS_DIR / f"{cc}.json"
-            doc = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"p": {}}
-            doc["p"][p] = {"rno": rno, "fs": div, **sj}
+            doc = load_doc(cc)
+            entry = I.get(cc, {})
+            for p, rno, latest, div, rows in got:
+                done += 1
+                if not rows:
+                    empty += 1
+                    if latest:
+                        tries = entry.get("tries", 0) + 1 if entry.get("rno") == rno else 1
+                        # 이전 분기 값은 남겨두되, 이번 보고서는 '아직 없음'으로 표시
+                        entry = {**{k: v for k, v in entry.items() if k not in ("rno", "na", "tries")},
+                                 "rno": rno, "na": 1, "tries": tries}
+                    else:
+                        doc.setdefault("na", {})[p] = rno  # 과거 분기는 한 번만 시도
+                    continue
+                sj = compact(rows)
+                doc["p"][p] = {"rno": rno, "fs": div, **sj}
+                if latest:
+                    entry = {"p": p, "rno": rno, "fs": div, **summarize(sj)}
+                if done % 500 == 0:
+                    print(f"  상세 {done:,}/{n_rep:,} ({done / n_rep:.0%}) 호출 {used[0]:,}", flush=True)
             doc["p"] = dict(sorted(doc["p"].items())[-KEEP:])
-            path.write_text(json.dumps(doc, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-            I[cc] = {"p": p, "rno": rno, "fs": div, **summarize(sj)}
-            if done % 200 == 0:
-                print(f"  상세 {done:,}/{len(todo):,} ({done / len(todo):.0%}) 호출 {used[0]:,}", flush=True)
+            if doc["p"] or doc.get("na"):
+                (FS_DIR / f"{cc}.json").write_text(json.dumps(doc, ensure_ascii=False, separators=(",", ":")),
+                                                   encoding="utf-8")
+            entry["h"] = hist(doc)
+            I[cc] = entry
 
-    left = len(todo) - done
     dart.save_json("fs_index.json", {
         "updated": date.today().isoformat(),
         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "companies": dict(sorted(I.items())),
     }, compact=True)
-    print(f"상세 저장: 이번 {done:,}개사 (데이터 없음 {empty:,}, 실패 {failed:,}, 남음 {left:,}) "
+    print(f"상세 저장: 이번 {done:,}건 (데이터 없음 {empty:,}, 실패 회사 {failed:,}, 남음 {n_rep - done:,}건) "
           f"/ 호출 {used[0]:,}회 / 누적 {len(I):,}개사", flush=True)
 
 
 if __name__ == "__main__":
-    resummarize() if "--resummarize" in sys.argv else main()
+    resummarize() if "--resummarize" in sys.argv else main(history="--history" in sys.argv)

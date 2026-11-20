@@ -160,6 +160,10 @@ function detail(r) {
       ${line("부채총계", v => fmt(v.liab))}
       ${line("자본총계", v => fmt(v.eq))}
       ${line("부채비율", v => v.eq > 0 ? (v.liab / v.eq * 100).toFixed(1) + "%" : "–")}
+      <tr><th class="l">차입금의존도</th>${ps.map(p => {
+        const d = f && f.h ? f.h[p] : null; // 분기별 (상세 재무제표 기준)
+        return `<td>${d == null ? "–" : d.toFixed(1) + "%"}</td>`;
+      }).join("")}</tr>
     </tbody></table></td></tr>`;
 }
 
