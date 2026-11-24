@@ -8,6 +8,7 @@
 그래서 YoY = 이번 보고서의 당기 ÷ 같은 보고서의 전기 가 되고, 화면 범위 1년 전 분기도 비교 열로 채워진다.
 
 결과: data/earnings.json
+      data/earnings_sep.json — 공정위 기업집단 소속회사의 '별도' 실적 (그룹 합산용, 같은 응답에서 저장 → 추가 호출 없음)
 """
 from __future__ import annotations
 
@@ -138,6 +139,52 @@ def restated(raw: dict, cc: str, fsd: str) -> dict[str, dict]:
     return {p: r for p, r in R.items() if r}
 
 
+def build(raw: dict, cc: str, fsd: str) -> dict[str, dict]:
+    """한 회사의 기간별 값 {'2026Q3': {...}} — fsd: CFS(연결) / OFS(별도)"""
+    d = {}
+    for (y, q), per in raw.items():
+        c = per.get(cc)
+        if not c or fsd not in c:
+            continue
+        fs = c[fsd]
+        v = {"dt": c["rcept_no"][:8], "rno": c["rcept_no"]}  # rno: DART 보고서 링크용
+        for k in FLOW:
+            if k not in fs:
+                continue
+            amt, add = fs[k]["amt"], fs[k]["add"]
+            if q == 4:
+                # 사업보고서는 연간값 → 3Q 누적을 빼서 4Q 단독
+                prev = raw.get((y, 3), {}).get(cc, {}).get(fsd, {}).get(k, {})
+                cum3 = prev.get("add") if prev else None
+                v[k] = amt - cum3 if (amt is not None and cum3 is not None) else None
+                v["c" + k] = amt
+            else:
+                v[k] = amt
+                v["c" + k] = add if add is not None else (amt if q == 1 else None)
+        for k in STOCK:
+            if k in fs:
+                v[k] = fs[k]["amt"]
+        d[f"{y}Q{q}"] = v
+    # 재작성 숫자로 덮어쓰기 (원래 숫자와 다르면 rs=1 표시). 화면 범위 밖 전년 분기는 비교용으로만 저장
+    for p, r in restated(raw, cc, fsd).items():
+        if p in d:
+            if any(d[p].get(k) is None or abs(d[p][k] - x) > 0.5 for k, x in r.items()):
+                d[p]["rs"] = 1
+            d[p].update(r)
+        else:
+            d[p] = r
+    d = dict(sorted(d.items()))
+    return d
+
+
+def group_corps() -> list[str]:
+    """공정위 기업집단 소속회사 중 DART 기업코드가 있는 회사 (법인등록번호로 연결)"""
+    G = dart.load_json("groups.json", {"groups": {}})["groups"]
+    C = dart.load_json("company.json", {"companies": {}})["companies"]
+    jur = {m[1] for ms in G.values() for m in ms if m[1]}
+    return sorted(cc for cc, v in C.items() if re.sub(r"\D", "", v.get("jurir_no", "")) in jur)
+
+
 def main() -> None:
     uni = dart.load_json("universe.json", None)
     if not uni:
@@ -167,39 +214,7 @@ def main() -> None:
         # 연결(CFS) 우선, 없으면 별도(OFS) — 기업 단위로 하나로 통일
         has_cfs = any("CFS" in raw[p].get(cc, {}) for p in raw)
         fsd = "CFS" if has_cfs else "OFS"
-        d = {}
-        for (y, q), per in raw.items():
-            c = per.get(cc)
-            if not c or fsd not in c:
-                continue
-            fs = c[fsd]
-            v = {"dt": c["rcept_no"][:8], "rno": c["rcept_no"]}  # rno: DART 보고서 링크용
-            for k in FLOW:
-                if k not in fs:
-                    continue
-                amt, add = fs[k]["amt"], fs[k]["add"]
-                if q == 4:
-                    # 사업보고서는 연간값 → 3Q 누적을 빼서 4Q 단독
-                    prev = raw.get((y, 3), {}).get(cc, {}).get(fsd, {}).get(k, {})
-                    cum3 = prev.get("add") if prev else None
-                    v[k] = amt - cum3 if (amt is not None and cum3 is not None) else None
-                    v["c" + k] = amt
-                else:
-                    v[k] = amt
-                    v["c" + k] = add if add is not None else (amt if q == 1 else None)
-            for k in STOCK:
-                if k in fs:
-                    v[k] = fs[k]["amt"]
-            d[f"{y}Q{q}"] = v
-        # 재작성 숫자로 덮어쓰기 (원래 숫자와 다르면 rs=1 표시). 화면 범위 밖 전년 분기는 비교용으로만 저장
-        for p, r in restated(raw, cc, fsd).items():
-            if p in d:
-                if any(d[p].get(k) is None or abs(d[p][k] - x) > 0.5 for k, x in r.items()):
-                    d[p]["rs"] = 1
-                d[p].update(r)
-            else:
-                d[p] = r
-        d = dict(sorted(d.items()))
+        d = build(raw, cc, fsd)
         if d:
             companies[cc] = {"fs": fsd, "d": d}
 
@@ -210,6 +225,17 @@ def main() -> None:
         "companies": companies,
     }, compact=True)
     print(f"실적 저장: {len(companies):,}개사")
+
+    # 그룹 합산용 별도 실적
+    sep = {cc: d for cc in group_corps() if (d := build(raw, cc, "OFS"))}
+    if sep:
+        dart.save_json("earnings_sep.json", {
+            "updated": date.today().isoformat(),
+            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "periods": [f"{y}Q{q}" for y, q in quarters],
+            "companies": sep,
+        }, compact=True)
+        print(f"별도 실적 저장: {len(sep):,}개사")
 
 
 if __name__ == "__main__":

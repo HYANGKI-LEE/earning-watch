@@ -42,7 +42,7 @@ jobs:
         run: python scripts/fetch_earnings.py
       - name: 실적 데이터 커밋
         if: always()
-        run: bash scripts/commit_data.sh "data - 분기 실적 갱신" data/earnings.json
+        run: bash scripts/commit_data.sh "data - 분기 실적 갱신" data/earnings.json data/earnings_sep.json
       # 새로 들어온(또는 정정된) 보고서만 전체 재무제표 → 회사별 파일 + 차입금의존도
       - name: 상세 재무제표
         env:
