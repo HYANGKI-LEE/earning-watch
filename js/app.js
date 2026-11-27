@@ -276,15 +276,176 @@ function bindIssuers() {
   };
 }
 
+// ───────── 그룹 실적 탭 (공정위 기업집단, 계열사 별도 합산) ─────────
+let S = null, GROWS = [];
+const gst = { period: null, mode: "q", fin: "nf", q: "", sort: { key: "rank", dir: 1 }, open: null };
+const gpick = (v, k) => v == null ? null : (gst.mode === "c" ? v["c" + k] : v[k]) ?? null;
+const inFin = fin => gst.fin === "all" || (gst.fin === "f" ? !!fin : !fin);
+const gname = cc => (U && U.companies[cc] && U.companies[cc].name) || cc;
+const FLOWS = ["rev", "op", "ni"];
+
+// 회사 목록 ms([기업코드, 금융]) 의 기간 p 별도 합산. YoY 는 올해·전년 둘 다 있는 회사끼리만
+function agg(ms, p) {
+  const py = prevYear(p), o = { n: 0, asset: null, liab: null, eq: null };
+  const cur = {}, prv = {}, cnt = {};
+  for (const k of FLOWS) { o[k] = null; cur[k] = 0; prv[k] = 0; cnt[k] = 0; }
+  for (const [cc] of ms) {
+    const c = S.companies[cc]; if (!c) continue;
+    const v = c.d[p]; if (!v || !v.rno) continue; // 이 분기 보고서가 있는 회사만
+    const y = c.d[py];
+    o.n++;
+    for (const k of FLOWS) {
+      const a = gpick(v, k); if (a == null) continue;
+      o[k] = (o[k] || 0) + a;
+      const b = gpick(y, k);
+      if (b != null) { cur[k] += a; prv[k] += b; cnt[k]++; }
+    }
+    for (const k of ["asset", "liab", "eq"]) if (v[k] != null) o[k] = (o[k] || 0) + v[k];
+  }
+  for (const k of FLOWS) {
+    o[k + "Y"] = cnt[k] ? growth(cur[k], prv[k]) : null;
+    o[k + "T"] = cnt[k] && k !== "rev" ? turn(cur[k], prv[k]) : null;
+  }
+  o.opm = o.rev && o.op != null ? o.op / o.rev * 100 : null;
+  o.debt = o.eq > 0 ? o.liab / o.eq * 100 : null;
+  return o;
+}
+
+const GCOLS = [
+  { key: "rank", label: "순위", l: true },
+  { key: "name", label: "그룹", l: true },
+  { key: "n", label: "집계" },
+  { key: "rev", label: "매출" },
+  { key: "revY", label: "YoY", g: true },
+  { key: "op", label: "영업이익" },
+  { key: "opY", label: "YoY", g: true, t: "opT" },
+  { key: "opm", label: "영업이익률", r: true },
+  { key: "ni", label: "순이익" },
+  { key: "niY", label: "YoY", g: true, t: "niT" },
+  { key: "asset", label: "자산총계" },
+  { key: "debt", label: "부채비율", r: true },
+];
+
+function buildGroups() {
+  // 순위: 공정위 소속회사 자산총액(금융보험업 제외) 순 — 공정위 공식 순위(금융사는 자본총계로 계산)와 거의 같음
+  const order = Object.entries(S.groups).sort((a, b) => (b[1].nf ?? b[1].a) - (a[1].nf ?? a[1].a));
+  GROWS = order.map(([g, G], i) => {
+    const ms = G.m.filter(x => inFin(x[1]));
+    return { g, name: g, rank: i + 1, tot: G.n, ms, ...agg(ms, gst.period) };
+  }).filter(r => r.ms.length); // 이 범위(비금융/금융)에 DART 회사가 없는 그룹은 숨김
+}
+
+const gy = (v, t) => t ? `<td class="${t === "흑전" ? "up" : "down"}">${t}</td>` : `<td class="${cls(v)}">${pct(v)}</td>`;
+const rpct = v => v == null ? "–" : v.toFixed(1) + "%";
+
+function renderGroups() {
+  const { key, dir } = gst.sort;
+  const q = gst.q.trim().toLowerCase();
+  const rows = GROWS.filter(r => !q || r.name.toLowerCase().includes(q) || r.ms.some(([cc]) => gname(cc).toLowerCase().includes(q)))
+    .sort((a, b) => {
+      const x = a[key], y = b[key];
+      if (x == null && y == null) return 0;
+      if (x == null) return 1;
+      if (y == null) return -1;
+      return (typeof x === "string" ? x.localeCompare(y, "ko") : x - y) * dir;
+    });
+  $("#gtbl thead").innerHTML = "<tr>" + GCOLS.map(c =>
+    `<th class="${c.l ? "l" : ""}" data-k="${c.key}">${c.label}${key === c.key ? (dir > 0 ? " ▲" : " ▼") : ""}</th>`).join("") + "</tr>";
+  const html = [];
+  for (const r of rows) {
+    html.push(`<tr class="row" data-g="${r.g}">` + GCOLS.map(c => {
+      if (c.key === "rank") return `<td class="l">${r.rank}</td>`;
+      if (c.key === "name") return `<td class="l">${r.name}</td>`;
+      if (c.key === "n") return `<td title="이 분기 실적이 있는 회사 / DART에서 찾은 소속회사 (공정위 전체 ${r.tot}개)">${r.n} / ${r.ms.length}</td>`;
+      if (c.g) return gy(r[c.key], c.t && r[c.t]);
+      if (c.r) return `<td>${rpct(r[c.key])}</td>`;
+      return `<td>${fmt(r[c.key])}</td>`;
+    }).join("") + "</tr>");
+    if (gst.open === r.g) html.push(gdetail(r));
+  }
+  $("#gtbl tbody").innerHTML = html.join("");
+  const has = rows.filter(r => r.n).length;
+  $("#gstatus").textContent = `${gst.period}${gst.mode === "c" ? " 누적" : ""} · ${rows.length}개 그룹 (실적 있는 그룹 ${has}) · ` +
+    `${{ nf: "비금융 계열사", all: "금융 포함 전체 계열사", f: "금융 계열사만" }[gst.fin]} 별도 합산 · 그룹을 누르면 분기 추이와 계열사별 실적`;
+}
+
+function gdetail(r) {
+  const ps = S.periods, G = S.groups[r.g];
+  const parts = [["비금융", r.ms.filter(x => !x[1])], ["금융", r.ms.filter(x => x[1])]].filter(([, m]) => m.length);
+  const series = parts.length > 1 ? [["합계", r.ms], ...parts] : [["합계", r.ms]];
+  const LAB = { rev: "매출", op: "영업이익", ni: "순이익" };
+  const yo = (o, k) => {
+    const t = o[k + "T"];
+    if (t) return `<small class="${t === "흑전" ? "up" : "down"}">${t}</small>`;
+    return o[k + "Y"] == null ? "" : `<small class="${cls(o[k + "Y"])}">${pct(o[k + "Y"])}</small>`;
+  };
+  const trend = series.map(([lab, m]) => {
+    const by = Object.fromEntries(ps.map(p => [p, agg(m, p)]));
+    return FLOWS.map(k => `<tr><th class="l">${lab} ${LAB[k]}${gst.mode === "c" ? "(누적)" : ""}</th>` +
+      ps.map(p => `<td>${by[p].n ? fmt(by[p][k]) + " " + yo(by[p], k) : "–"}</td>`).join("") + "</tr>").join("") +
+      `<tr><th class="l">${lab} 부채비율</th>${ps.map(p => `<td>${rpct(by[p].debt)}</td>`).join("")}</tr>` +
+      `<tr><th class="l">${lab} 집계 회사</th>${ps.map(p => `<td>${by[p].n}</td>`).join("")}</tr>`;
+  }).join("");
+
+  // 선택 분기 계열사별 (실적 있는 회사 먼저, 매출 큰 순)
+  const p = gst.period, py = prevYear(p);
+  const mem = r.ms.map(([cc, fin]) => {
+    const c = S.companies[cc], v = c && c.d[p], y = c && c.d[py];
+    const ok = !!(v && v.rno);
+    const o = { cc, fin, ok, name: gname(cc), cls: (U && U.companies[cc] && U.companies[cc].cls) || "E" };
+    if (ok) {
+      for (const k of FLOWS) { o[k] = gpick(v, k); o[k + "Y"] = growth(o[k], gpick(y, k)); o[k + "T"] = k === "rev" ? null : turn(o[k], gpick(y, k)); }
+      o.debt = v.eq > 0 ? v.liab / v.eq * 100 : null; o.dt = v.dt; o.rno = v.rno;
+    }
+    return o;
+  }).sort((a, b) => (b.ok - a.ok) || ((b.rev ?? -Infinity) - (a.rev ?? -Infinity)));
+  const memRows = mem.map(m => `<tr${m.ok ? "" : ' class="muted"'}><td class="l">${m.name}${m.fin ? ' <span class="badge">금융</span>' : ""}</td>` +
+    `<td class="l">${CLS[m.cls] || m.cls}</td>` +
+    (m.ok ? FLOWS.map(k => `<td>${fmt(m[k])}</td>${gy(m[k + "Y"], m[k + "T"])}`).join("") +
+      `<td>${rpct(m.debt)}</td><td><a class="dartlink" href="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${m.rno}" target="_blank" rel="noopener">${fmtDt(m.dt)}</a></td>`
+      : `<td colspan="8" class="l">${p} 실적 없음 (아직 미공시 또는 DART 재무 데이터 없음)</td>`) + "</tr>").join("");
+  const off = G.n - G.m.length;
+  return `<tr class="detail"><td colspan="${GCOLS.length}">
+    <div class="muted" style="margin-bottom:6px">${r.g} · 공정위 소속회사 ${G.n}개 중 DART에서 찾은 ${G.m.length}개${off ? ` (나머지 ${off}개는 DART 정기공시 대상 아님 — 소규모 비상장·해외법인 등)` : ""} · 별도 합산, 억원</div>
+    <table><thead><tr><th class="l"></th>${ps.map(p => `<th>${p}</th>`).join("")}</tr></thead><tbody>${trend}</tbody></table>
+    <div class="muted" style="margin:10px 0 6px">${p}${gst.mode === "c" ? " 누적" : ""} 계열사별 (별도)</div>
+    <table><thead><tr><th class="l">회사</th><th class="l">상장</th><th>매출</th><th>YoY</th><th>영업이익</th><th>YoY</th><th>순이익</th><th>YoY</th><th>부채비율</th><th>공시일</th></tr></thead>
+    <tbody>${memRows}</tbody></table></td></tr>`;
+}
+
+function bindGroups() {
+  $("#gperiod").onchange = e => { gst.period = e.target.value; buildGroups(); renderGroups(); };
+  const chips = (sel, f) => $(sel).onclick = e => {
+    const b = e.target.closest("button"); if (!b) return;
+    $(sel).querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+    f(b.dataset.v); buildGroups(); renderGroups();
+  };
+  chips("#gmode", v => gst.mode = v);
+  chips("#gfin", v => gst.fin = v);
+  $("#gq").oninput = e => { gst.q = e.target.value; renderGroups(); };
+  $("#gtbl thead").onclick = e => {
+    const k = e.target.closest("th")?.dataset.k; if (!k) return;
+    gst.sort = gst.sort.key === k ? { key: k, dir: -gst.sort.dir } : { key: k, dir: GCOLS.find(c => c.key === k).l ? 1 : -1 };
+    renderGroups();
+  };
+  $("#gtbl tbody").onclick = e => {
+    if (e.target.closest("a")) return;
+    const tr = e.target.closest("tr.row"); if (!tr) return;
+    gst.open = gst.open === tr.dataset.g ? null : tr.dataset.g;
+    renderGroups();
+  };
+}
+
 // ───────── 탭 전환 ─────────
 function showTab(t) {
   $("#tabs").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
   $("#tab-earn").hidden = t !== "earn";
   $("#tab-iss").hidden = t !== "iss";
+  $("#tab-grp").hidden = t !== "grp";
   try { location.hash = t; } catch (_) {}
 }
 $("#tabs").onclick = e => { const b = e.target.closest("button"); if (b) showTab(b.dataset.tab); };
-const tabFromHash = () => showTab(location.hash === "#iss" ? "iss" : "earn");
+const tabFromHash = () => showTab(["#iss", "#grp"].includes(location.hash) ? location.hash.slice(1) : "earn");
 window.addEventListener("hashchange", tabFromHash);
 tabFromHash();
 
@@ -306,3 +467,17 @@ Promise.all([pU, getJSON("data/earnings.json"), pF])
     bind(); build(); render();
   })
   .catch(() => { $("#status").textContent = "아직 수집된 데이터가 없어요. (Actions 에서 데이터 수집을 먼저 실행하세요)"; });
+
+Promise.all([pU.catch(() => null), getJSON("data/earnings_sep.json")])
+  .then(([u, s]) => {
+    if (!s.groups) throw 0;
+    U = U || u; S = s;
+    for (const cc in S.companies) S.companies[cc] = { d: S.companies[cc] }; // 별도 파일은 {기업코드: 기간별 값} → 연결 파일과 같은 모양으로
+    const ps = S.periods.filter(p => Object.values(S.companies).some(c => c.d[p] && c.d[p].rno));
+    $("#gperiod").innerHTML = ps.slice().reverse().map(p => `<option>${p}</option>`).join("");
+    gst.period = ps[ps.length - 1];
+    const a = S.groups_asof || "";
+    $("#gasof").textContent = a ? `(${a.slice(0, 4)}.${a.slice(4)} 기준)` : "";
+    bindGroups(); buildGroups(); renderGroups();
+  })
+  .catch(() => { $("#gstatus").textContent = "아직 그룹 실적 데이터가 없어요."; });

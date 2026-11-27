@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Earning Watch</title>
-  <link rel="stylesheet" href="css/style.css?v=20261120b">
+  <link rel="stylesheet" href="css/style.css?v=20261127a">
 </head>
 <body>
   <header>
@@ -14,8 +14,33 @@
 
   <nav class="tabs" id="tabs">
     <button data-tab="earn" class="on">분기 실적</button>
+    <button data-tab="grp">그룹 실적</button>
     <button data-tab="iss">발행사 리스트</button>
   </nav>
+
+  <div id="tab-grp" hidden>
+    <section class="controls">
+      <select id="gperiod" aria-label="분기"></select>
+      <div class="chips" id="gfin" title="합산 범위">
+        <button data-v="nf" class="on">비금융 계열사</button>
+        <button data-v="all">금융 포함</button>
+        <button data-v="f">금융만</button>
+      </div>
+      <input id="gq" type="search" placeholder="그룹명·회사명 검색">
+      <div class="chips" id="gmode" style="margin-left:auto" title="손익 기준">
+        <button data-v="q" class="on">분기</button>
+        <button data-v="c">누적</button>
+      </div>
+    </section>
+    <p id="gstatus" class="muted">불러오는 중…</p>
+    <div class="tablewrap">
+      <table id="gtbl">
+        <thead></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="muted note">계열사 별도 합산(연결 아님): 공정위 공시대상기업집단 소속회사 중 DART에 별도 재무제표가 있는 회사의 단순 합 — 계열사 간 내부거래·지주사 배당수익을 빼지 않아 실제보다 크게 잡힘, 추세 비교용 · YoY는 이번 분기와 전년 같은 분기가 모두 있는 회사끼리만 비교 · 영업이익률·부채비율은 합산 금액으로 계산 · 집계 = 이 분기 실적이 있는 회사 / 소속회사 · 순위·소속회사: 공정위 기업집단포털 <span id="gasof"></span> · 금융지주(KB·신한 등)는 공정위 지정 대상이 아니라 없음 · 단위: 억원 · 출처: DART OpenAPI, 공정거래위원회</p>
+  </div>
 
   <div id="tab-iss" hidden>
     <section class="controls">
@@ -68,6 +93,6 @@
   <p class="muted note">단위: 억원 · 손익: '분기' = 분기 단독(4Q = 연간 − 3Q 누적), '누적' = 연초부터 해당 분기까지(4Q = 연간), 과거 분기는 회사가 재작성한 숫자(1년 뒤 보고서의 전년 열) 우선, 표 머리의 * = 재작성 반영 · YoY는 같은 보고서의 당기 ÷ 전년 열 · 연결 우선, 없으면 별도 · 출처: DART OpenAPI</p>
   </div>
 
-  <script src="js/app.js?v=20261120b"></script>
+  <script src="js/app.js?v=20261127a"></script>
 </body>
 </html>

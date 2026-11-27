@@ -177,12 +177,24 @@ def build(raw: dict, cc: str, fsd: str) -> dict[str, dict]:
     return d
 
 
-def group_corps() -> list[str]:
-    """공정위 기업집단 소속회사 중 DART 기업코드가 있는 회사 (법인등록번호로 연결)"""
+def group_map() -> dict[str, dict]:
+    """공정위 기업집단 → DART 기업코드 (법인등록번호로 연결, 화면의 그룹 탭용)
+    {그룹명: {n: 공정위 소속회사 수, a: 공정위 자산총액 합(백만원), nf: 금융보험업 제외, m: [[기업코드, 금융보험업 1/0, 자산총액(백만원)]]}}"""
     G = dart.load_json("groups.json", {"groups": {}})["groups"]
     C = dart.load_json("company.json", {"companies": {}})["companies"]
-    jur = {m[1] for ms in G.values() for m in ms if m[1]}
-    return sorted(cc for cc, v in C.items() if re.sub(r"\D", "", v.get("jurir_no", "")) in jur)
+    by_jur = {re.sub(r"\D", "", v.get("jurir_no", "")): cc for cc, v in C.items() if v.get("jurir_no")}
+    out = {}
+    for g, ms in G.items():
+        m = [[by_jur[j], int(kind == "금융보험업"), a or 0] for _, jr, kind, a in ms if (j := re.sub(r"\D", "", jr or "")) in by_jur]
+        out[g] = {"n": len(ms), "a": sum(x[3] or 0 for x in ms),
+                  "nf": sum(x[3] or 0 for x in ms if x[2] != "금융보험업"), "m": m}  # nf: 금융보험업 제외 자산 (순위용)
+    return out
+
+
+def group_corps(gm: dict | None = None) -> list[str]:
+    """공정위 기업집단 소속회사 중 DART 기업코드가 있는 회사"""
+    gm = gm if gm is not None else group_map()
+    return sorted({x[0] for g in gm.values() for x in g["m"]})
 
 
 def main() -> None:
@@ -227,13 +239,16 @@ def main() -> None:
     print(f"실적 저장: {len(companies):,}개사")
 
     # 그룹 합산용 별도 실적
-    sep = {cc: d for cc in group_corps() if (d := build(raw, cc, "OFS"))}
+    gm = group_map()
+    sep = {cc: d for cc in group_corps(gm) if (d := build(raw, cc, "OFS"))}
     if sep:
         dart.save_json("earnings_sep.json", {
             "updated": date.today().isoformat(),
             "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
             "periods": [f"{y}Q{q}" for y, q in quarters],
             "companies": sep,
+            "groups": gm,
+            "groups_asof": dart.load_json("groups.json", {}).get("asof", ""),
         }, compact=True)
         print(f"별도 실적 저장: {len(sep):,}개사")
 
